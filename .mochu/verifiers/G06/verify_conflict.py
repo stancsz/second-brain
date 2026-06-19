@@ -94,7 +94,9 @@ def main():
         check("B's totally different body" in all_text, "device B's edit was lost (clobbered)")
 
         # Rebuilt brain has exactly ONE 'Shared' drawer (conflict copy not imported).
-        nshared = sum(1 for d in SecondBrain(b_db).list(limit=99) if d["title"] == "Shared")
+        bx = SecondBrain(b_db)
+        nshared = sum(1 for d in bx.list(limit=99) if d["title"] == "Shared")
+        bx.close()
         check(nshared == 1, f"expected 1 'Shared' drawer after rebuild, got {nshared} "
                             "(conflict copy wrongly imported?)")
 
