@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **OKF reserved files on export** (`scripts/bundle.py`) — `export` now writes a root `index.md`
+  declaring `okf_version: "0.1"` and listing collections + root concepts, a per-subdirectory
+  `index.md` (progressive disclosure, no frontmatter per OKF §6), and a root `log.md` with
+  ISO date-grouped creation entries newest-first (OKF §7). All links resolve to real files;
+  `rebuild` ignores the reserved files. The Bundle is now OKF v0.1-conformant end to end.
+  (mochu iter-3, gap G03)
 - **Bundle export / rebuild** (`scripts/bundle.py`) — `export(brain, dir)` writes the whole
   brain (including soft-deleted drawers) as an OKF Bundle; `rebuild(dir, db)` reconstructs a
   **fresh** brain.db from the Bundle with zero loss: drawers, tags, sources, collections,

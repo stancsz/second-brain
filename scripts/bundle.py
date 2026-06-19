@@ -79,21 +79,103 @@ def _unique_path(concept: dict, used: set) -> str:
     return path
 
 
+def _description(concept: dict) -> str:
+    """A one-line description for index/log listings."""
+    d = concept.get("description")
+    if d:
+        return d.strip()
+    body = (concept.get("body") or "").strip()
+    first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+    return (first[:97] + "…") if len(first) > 100 else first
+
+
+def _iso_date(ts) -> str:
+    """Extract a YYYY-MM-DD date from a timestamp string, else today (UTC)."""
+    if ts and isinstance(ts, str) and len(ts) >= 10 and ts[4] == "-":
+        return ts[:10]
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def export(brain: SecondBrain, bundle_dir) -> dict:
-    """Write the entire brain (including soft-deleted drawers) as an OKF Bundle."""
+    """Write the entire brain (including soft-deleted drawers) as an OKF Bundle,
+    with conformant reserved files (per-directory index.md, a root log.md, and an
+    okf_version pin in the root index.md)."""
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     rows = brain.con.execute("SELECT * FROM drawers ORDER BY created_at").fetchall()
     used: set = set()
-    n = 0
+    entries = []  # {rel, title, desc, collection, created}
     for row in rows:
         concept = _drawer_to_concept(brain, row)
         rel = _unique_path(concept, used)
         f = bundle_dir / rel
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(okf.to_markdown(concept), encoding="utf-8")
-        n += 1
-    return {"concepts": n, "path": str(bundle_dir)}
+        entries.append({
+            "rel": rel, "title": concept["title"], "desc": _description(concept),
+            "collection": (concept.get("collection") or "").strip("/"),
+            "created": _iso_date(row["created_at"]),
+        })
+
+    _write_indexes(bundle_dir, entries)
+    _write_log(bundle_dir, entries)
+    return {"concepts": len(entries), "path": str(bundle_dir)}
+
+
+def _write_indexes(bundle_dir: Path, entries: list) -> None:
+    """Root index.md (okf_version pin + collections + root concepts) and one
+    index.md per collection subdirectory. Per OKF §6, index.md carries no
+    frontmatter except the root's okf_version declaration."""
+    by_coll: dict = {}
+    root_concepts = []
+    for e in entries:
+        if e["collection"]:
+            by_coll.setdefault(e["collection"], []).append(e)
+        else:
+            root_concepts.append(e)
+
+    # Subdirectory indexes.
+    for coll, items in by_coll.items():
+        lines = [f"# {coll}", ""]
+        for e in sorted(items, key=lambda x: x["title"].lower()):
+            name = Path(e["rel"]).name
+            desc = f" - {e['desc']}" if e["desc"] else ""
+            lines.append(f"* [{e['title']}]({name}){desc}")
+        (bundle_dir / coll / "index.md").write_text("\n".join(lines) + "\n",
+                                                    encoding="utf-8")
+
+    # Root index.
+    out = ['---', f'okf_version: "{okf.OKF_VERSION}"', '---', '']
+    if by_coll:
+        out += ["# Collections", ""]
+        for coll in sorted(by_coll):
+            n = len(by_coll[coll])
+            out.append(f"* [{coll}]({coll}/) - {n} concept{'s' if n != 1 else ''}")
+        out.append("")
+    if root_concepts:
+        out += ["# Concepts", ""]
+        for e in sorted(root_concepts, key=lambda x: x["title"].lower()):
+            desc = f" - {e['desc']}" if e["desc"] else ""
+            out.append(f"* [{e['title']}]({Path(e['rel']).name}){desc}")
+        out.append("")
+    (bundle_dir / "index.md").write_text("\n".join(out).rstrip() + "\n",
+                                         encoding="utf-8")
+
+
+def _write_log(bundle_dir: Path, entries: list) -> None:
+    """Root log.md: ISO date-grouped creation entries, newest date first (OKF §7)."""
+    by_date: dict = {}
+    for e in entries:
+        by_date.setdefault(e["created"], []).append(e)
+    lines = ["# Update Log", ""]
+    for date in sorted(by_date, reverse=True):
+        lines.append(f"## {date}")
+        for e in sorted(by_date[date], key=lambda x: x["title"].lower()):
+            lines.append(f"* **Creation**: [{e['title']}](/{e['rel']})")
+        lines.append("")
+    (bundle_dir / "log.md").write_text("\n".join(lines).rstrip() + "\n",
+                                       encoding="utf-8")
 
 
 # -- rebuild ---------------------------------------------------------------
