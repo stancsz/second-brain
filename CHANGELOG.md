@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- **Bundle export / rebuild** (`scripts/bundle.py`) — `export(brain, dir)` writes the whole
+  brain (including soft-deleted drawers) as an OKF Bundle; `rebuild(dir, db)` reconstructs a
+  **fresh** brain.db from the Bundle with zero loss: drawers, tags, sources, collections,
+  soft-delete state, wikilink relations, and the FTS index all survive. This makes SQLite a
+  disposable cache and the OKF files the source of truth. `type`/`sb_*` fields ride in
+  `drawers.metadata` until real columns land (G08–G10). Reserved-name titles (`index`/`log`)
+  are auto-suffixed. (mochu iter-2, gap G02)
+  - Known limitations: no `index.md`/`log.md` generation yet (G03); not wired into the CLI/skill
+    or any sync flow yet (G05); cross-concept `[[wikilink]]` rendering still verbatim.
+
 - **OKF serializer** (`scripts/okf.py`) — converts a Concept to/from an Open Knowledge
   Format (OKF v0.1) markdown document with YAML frontmatter, and back, losslessly. Supports
   the namespaced `sb_*` psychological extensions (`sb_subject`, `sb_valid_from/to`,
