@@ -52,7 +52,9 @@ def main():
         b = SecondBrain(db)
         b.add("Checkout timeout fix", "raised gateway timeout to 30s",
               collection="Engineering")
-        b.add("数据库迁移笔记", "我们把支付表迁移到了新库", collection="工程")
+        # CJK note recalled by an EXACT CJK token (FTS5 unicode61 treats a CJK
+        # run as one token, so we match a whole token, not a substring).
+        b.add("迁移笔记", "数据库 部署 notes", collection="工程")
         b.close()
 
         # 1. Relevant prompt under cp1252 -> must emit the recall block + note.
@@ -64,8 +66,8 @@ def main():
               f"recall did not surface the matching note; out={out!r}")
 
         # 2. Unicode note recalled intact (blocks a lazy 'strip all non-ASCII' fix).
-        rc2, out2 = run_hook("数据库 迁移", db)
-        check(rc2 == 0 and "数据库迁移笔记" in out2,
+        rc2, out2 = run_hook("数据库", db)
+        check(rc2 == 0 and "迁移笔记" in out2,
               f"unicode note not surfaced intact under cp1252; out={out2!r}")
 
         # 3. Filler prompt stays silent (no spurious recall).
