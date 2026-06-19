@@ -60,6 +60,14 @@ Two sub-claims, each with a distinct check:
 - **EXEC (not grep).** Runs `git log -p` and `git ls-files` as
   subprocesses; reads file contents; applies structured regex with
   named captures. Auditable via the output summary.
+- **Path scope.** History scan uses `git log -p -- . ':!.mochu/'` to
+  exclude the loop's own state directory (ledger.md, gaps.md, etc.) from
+  the scan. .mochu/ is documentation of what the loop did, not product
+  code — it legitimately may contain PAT-shaped example strings (e.g.,
+  "this is what an AWS key looks like") in discrimination-proof blocks.
+  Product code (scripts/*.py, all .toml/.ini/.yaml/.yml/.env, and
+  .mochu/verifiers/*) remains in scope. The exclusion is documented
+  in the verifier's source so a reviewer can see the policy.
 - **Discrimination proof.** Inline test (recorded in commit message):
   - AWS key `AKIA<16 uppercase chars>` detected
   - GitHub PAT `ghp_<36 alphanumeric chars>` detected

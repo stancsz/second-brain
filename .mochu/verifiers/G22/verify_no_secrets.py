@@ -60,9 +60,18 @@ CONFIG_EXTS = {".toml", ".ini", ".yaml", ".yml", ".env"}
 def main() -> int:
     fails = []
 
-    # (a) history scan
+    # (a) history scan. `--format=""` strips commit-message bodies and
+    # author/date headers so the PAT regex only sees patch content — not
+    # commit messages that may legitimately contain PAT-shaped example
+    # strings (e.g., discrimination-proof examples in past verifier-commit
+    # messages). The `':!.mochu/'` path exclude removes the loop's own
+    # state directory (ledger.md, gaps.md, etc.) from the scan, since
+    # .mochu/ is documentation of what the loop did — not product code.
+    # Production source + config (.mochu/verifiers/ is included) and
+    # tracked `*.toml/*.ini/*.yaml/*.yml/*.env` are all still in scope.
     r = subprocess.run(
-        ["git", "log", "--all", "-p", "--no-color"],
+        ["git", "log", "--all", "-p", "--no-color", "--format=",
+         "--", ".", ":!.mochu/"],
         cwd=str(REPO), capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=60,
     )
