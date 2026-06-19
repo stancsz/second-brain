@@ -33,6 +33,11 @@ DB_PATH = Path.home() / ".secondbrain" / "brain.db"
 WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 VALID_REL_TYPES = {"references", "contradicts", "expands", "related"}
 
+# Sentinel for "argument not passed" — distinguishes None (explicit clear) from
+# omitted (leave alone). Used by update() to avoid clobbering sb_subject when
+# the caller didn't intend to change it.
+_UNSET = object()
+
 
 def _uuid() -> str:
     return uuid.uuid4().hex
@@ -225,18 +230,173 @@ class SecondBrain:
 
     # -- CRUD ----------------------------------------------------------------
 
-    def add(self, title, content, collection=None, tags=None, sources=None):
+    def add(self, title, content, collection=None, tags=None, sources=None,
+            sb_subject=None):
         did = _uuid()
+        meta = {}
+        if sb_subject:
+            meta["sb_subject"] = sb_subject
         self.con.execute(
-            "INSERT INTO concepts (id, title, content, collection, sources) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (did, title, content, collection, json.dumps(sources or [])),
+            "INSERT INTO concepts (id, title, content, collection, sources, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (did, title, content, collection, json.dumps(sources or []),
+             json.dumps(meta)),
         )
         self._set_tags(did, tags or [])
         self._sync_wikilinks(did, content)
         self._resolve_pending_to(did, title)
+        self._sync_subject_index_for(did)
         self.con.commit()
         return self.get(did)
+
+    # -- subjects (G08 / R10) -------------------------------------------------
+
+    DEFAULT_SUBJECT_PATH = "/people/self.md"
+
+    def _normalize_subject(self, sb_subject: str | None) -> str:
+        """Return the canonical subject id to use (defaults to /people/self.md).
+
+        A subject id is a Bundle path. The OKF Concept's path IS its identity,
+        so this is the same string the user's `sb_subject:` frontmatter holds.
+        """
+        if sb_subject and sb_subject.strip():
+            return sb_subject.strip()
+        return self.DEFAULT_SUBJECT_PATH
+
+    def _ensure_subject(self, subject_id: str, display_name: str | None = None) -> None:
+        """UPSERT a subject row. Creates a virtual row when no Person Concept exists."""
+        slug = subject_id.rstrip(".md").rsplit("/", 1)[-1] or subject_id
+        name = display_name or slug
+        self.con.execute(
+            "INSERT INTO subjects (sb_id, slug, display_name, kind) "
+            "VALUES (?, ?, ?, 'Person') "
+            "ON CONFLICT(sb_id) DO UPDATE SET "
+            "  display_name = COALESCE(excluded.display_name, subjects.display_name)",
+            (subject_id, slug, name),
+        )
+
+    def _sync_subject_index_for(self, concept_id: str, sb_subject: str | None = None) -> None:
+        """Update the derived `subjects` and `concept_subject` tables for one concept.
+
+        If sb_subject is None, reads from concepts.metadata (used by the live add
+        path). If the concept has no sb_subject, defaults to /people/self.md.
+        """
+        if sb_subject is None:
+            row = self.con.execute(
+                "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
+            ).fetchone()
+            if not row:
+                return
+            try:
+                meta = json.loads(row["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            sb_subject = meta.get("sb_subject")
+        subject_id = self._normalize_subject(sb_subject)
+        # If the subject points at a real Person Concept, prefer its title.
+        person = self.con.execute(
+            "SELECT title FROM concepts WHERE id=? AND deleted_at IS NULL", (subject_id,)
+        ).fetchone()
+        if person:
+            self._ensure_subject(subject_id, person["title"])
+        else:
+            self._ensure_subject(subject_id)
+        self.con.execute(
+            "INSERT OR IGNORE INTO concept_subject (concept_id, subject_id) "
+            "VALUES (?, ?)",
+            (concept_id, subject_id),
+        )
+
+    def rebuild_subject_index(self) -> tuple[int, int]:
+        """Full re-sync of subjects + concept_subject from concepts.metadata.
+
+        Used by bundle.rebuild() after a full import. Returns
+        (subjects_count, links_count) for diagnostics.
+        """
+        self.con.execute("DELETE FROM concept_subject")
+        self.con.execute("DELETE FROM subjects")
+        rows = self.con.execute(
+            "SELECT id, title, collection, metadata, deleted_at FROM concepts"
+        ).fetchall()
+        # First pass: identify Person Concepts and their canonical paths.
+        # A Person Concept's own subject IS its own Bundle path — it appears
+        # in its own sub-graph by design.
+        person_paths: dict[str, str] = {}  # path -> concept id
+        for r in rows:
+            if r["deleted_at"]:
+                continue
+            try:
+                meta = json.loads(r["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            if meta.get("okf_type") == "Person" and r["collection"]:
+                path = f"/{r['collection']}/{r['title'].lower()}.md"
+                person_paths[path] = r["id"]
+        for path, cid in person_paths.items():
+            # Use the Person Concept's title as the display name
+            person_title = self.con.execute(
+                "SELECT title FROM concepts WHERE id=?", (cid,)
+            ).fetchone()["title"]
+            self._ensure_subject(path, person_title)
+        # /people/self.md always exists (default subject)
+        self._ensure_subject(self.DEFAULT_SUBJECT_PATH, "self")
+        # Second pass: link every non-Person concept to its subject. Person
+        # Concepts are the SUBJECT themselves — they are listed in `subjects`
+        # so users can enumerate people, but they are NOT members of their own
+        # sub-graph (the sub-graph is "memories about this person", not the
+        # person). We use INSERT OR IGNORE for the subject row so we never
+        # clobber the display_name set in the first pass.
+        links = 0
+        for r in rows:
+            if r["deleted_at"]:
+                continue
+            try:
+                meta = json.loads(r["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            if r["id"] in person_paths.values():
+                # Person Concept: is the subject itself, not a member of it.
+                continue
+            subject_id = self._normalize_subject(meta.get("sb_subject"))
+            self.con.execute(
+                "INSERT OR IGNORE INTO subjects (sb_id, slug, kind) VALUES (?, ?, 'Person')",
+                (subject_id, subject_id.rstrip(".md").rsplit("/", 1)[-1] or subject_id),
+            )
+            self.con.execute(
+                "INSERT OR IGNORE INTO concept_subject (concept_id, subject_id) "
+                "VALUES (?, ?)",
+                (r["id"], subject_id),
+            )
+            links += 1
+        self.con.commit()
+        return len(person_paths) + 1, links
+
+    def subjects(self) -> list[dict]:
+        """All registered subjects (Person Concepts + the default 'self')."""
+        rows = self.con.execute(
+            "SELECT s.sb_id, s.slug, s.display_name, s.kind, "
+            "       (SELECT COUNT(*) FROM concept_subject cs "
+            "        WHERE cs.subject_id = s.sb_id) AS concept_count "
+            "FROM subjects s ORDER BY s.display_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def subject_subgraph(self, subject_id: str) -> list[dict]:
+        """Return all live concepts for the given subject (Bundle path or normalized).
+
+        Per R10, a persona sub-graph query returns exactly that subject's Concepts.
+        Excludes soft-deleted concepts and concepts belonging to other subjects.
+        Empty list for unknown subjects (does not raise).
+        """
+        subject_id = self._normalize_subject(subject_id)
+        rows = self.con.execute(
+            "SELECT d.* FROM concepts d "
+            "JOIN concept_subject cs ON cs.concept_id = d.id "
+            "WHERE cs.subject_id = ? AND d.deleted_at IS NULL "
+            "ORDER BY d.updated_at DESC",
+            (subject_id,),
+        ).fetchall()
+        return [self._row_to_concept(r) for r in rows]
 
     def get(self, concept_id):
         row = self.con.execute(
@@ -254,7 +414,7 @@ class SecondBrain:
         return [self._row_to_concept(r) for r in rows]
 
     def update(self, concept_id, title=None, content=None, tags=None,
-               collection=None, sources=None):
+               collection=None, sources=None, sb_subject=_UNSET):
         cur = self.get(concept_id)
         if not cur:
             return None
@@ -262,10 +422,29 @@ class SecondBrain:
         new_content = content if content is not None else cur["content"]
         new_collection = collection if collection is not None else cur["collection"]
         new_sources = sources if sources is not None else cur["sources"]
+        if sb_subject is _UNSET:
+            cur_meta = json.loads(self.con.execute(
+                "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
+            ).fetchone()["metadata"] or "{}")
+            new_sb_subject = cur_meta.get("sb_subject")
+        else:
+            new_sb_subject = sb_subject
+        # Only update metadata if sb_subject actually changed
+        cur_meta_str = self.con.execute(
+            "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
+        ).fetchone()["metadata"] or "{}"
+        cur_meta = json.loads(cur_meta_str)
+        if new_sb_subject is None:
+            new_meta = {k: v for k, v in cur_meta.items() if k != "sb_subject"}
+        elif new_sb_subject:
+            new_meta = {**cur_meta, "sb_subject": new_sb_subject}
+        else:
+            new_meta = cur_meta
         self.con.execute(
             "UPDATE concepts SET title=?, content=?, collection=?, sources=?, "
-            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (new_title, new_content, new_collection, json.dumps(new_sources), concept_id),
+            "metadata=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (new_title, new_content, new_collection, json.dumps(new_sources),
+             json.dumps(new_meta), concept_id),
         )
         if tags is not None:
             self._set_tags(concept_id, tags)
@@ -273,6 +452,11 @@ class SecondBrain:
             self._sync_wikilinks(concept_id, new_content)
         if title is not None and title != cur["title"]:
             self._resolve_pending_to(concept_id, new_title)
+        # Re-sync subject index if sb_subject changed (or was explicitly passed)
+        if sb_subject is not _UNSET or (cur_meta.get("sb_subject") != new_sb_subject):
+            # Remove old link (if any) and re-link to new subject
+            self.con.execute("DELETE FROM concept_subject WHERE concept_id=?", (concept_id,))
+            self._sync_subject_index_for(concept_id, new_sb_subject)
         self.con.commit()
         return self.get(concept_id)
 

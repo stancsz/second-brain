@@ -111,3 +111,28 @@ CREATE TABLE IF NOT EXISTS _meta (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 INSERT OR IGNORE INTO _meta VALUES ('schema_version', '2', CURRENT_TIMESTAMP);
+
+-- ---------------------------------------------------------------------------
+-- Psychological subjects (G08 / R10)
+-- Derived from concepts; one row per `type: Person` Concept path, plus the
+-- implicit `/people/self.md` default. sb_id stores the Bundle path (e.g.
+-- `/people/rox.md`), not a UUID — the OKF Concept's path IS its identity, and
+-- `sb_subject` frontmatter uses the same path.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS subjects (
+    sb_id        TEXT PRIMARY KEY,   -- the path, e.g. /people/rox.md or /people/self.md
+    slug         TEXT NOT NULL,      -- last path segment without .md, e.g. "rox"
+    display_name TEXT,               -- title of the Person Concept (or 'self')
+    kind         TEXT NOT NULL DEFAULT 'Person'
+);
+
+CREATE TABLE IF NOT EXISTS concept_subject (
+    concept_id  TEXT NOT NULL,
+    subject_id  TEXT NOT NULL,
+    PRIMARY KEY (concept_id, subject_id),
+    FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE,
+    FOREIGN KEY (subject_id) REFERENCES subjects(sb_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_concept_subject_subject ON concept_subject(subject_id);

@@ -61,11 +61,16 @@ def main():
     a = sub.add_parser("add"); a.add_argument("title"); a.add_argument("content", nargs="?")
     a.add_argument("--content-file", help="read content from this file (avoids shell escaping for long content)")
     a.add_argument("--collection"); a.add_argument("--tags"); a.add_argument("--source", action="append")
+    a.add_argument("--subject", help="sb_subject: the Bundle path this memory is about (e.g. /people/rox.md). Defaults to /people/self.md.")
 
     s = sub.add_parser("search"); s.add_argument("query")
     s.add_argument("--collection"); s.add_argument("--tag"); s.add_argument("--limit", type=int, default=10)
 
     sh = sub.add_parser("show"); sh.add_argument("ident")
+
+    rs_sub = sub.add_parser("recall-subject")
+    rs_sub.add_argument("subject", help="the subject path (e.g. /people/rox.md) or display name (e.g. rox)")
+    rs_sub.add_argument("--limit", type=int, default=50)
 
     u = sub.add_parser("update"); u.add_argument("id")
     u.add_argument("--title"); u.add_argument("--content"); u.add_argument("--tags"); u.add_argument("--collection")
@@ -162,6 +167,29 @@ def main():
                 _fmt_concept_line(i + 1, d) for i, d in enumerate(res)) if res \
                 else "No results. Try broader terms or check the collection/tag filter."
             out(res, human)
+
+        elif args.cmd == "recall-subject":
+            # Accept either a full path (/people/rox.md) or a display name
+            # (e.g. "rox"). If the input doesn't start with '/', try to
+            # resolve via the subjects table.
+            sub_in = args.subject
+            if not sub_in.startswith("/"):
+                match = b.con.execute(
+                    "SELECT sb_id FROM subjects WHERE slug = ? OR display_name = ?",
+                    (sub_in.lower(), sub_in),
+                ).fetchone()
+                if match:
+                    sub_in = match["sb_id"]
+            res = b.subject_subgraph(sub_in)[:args.limit]
+            if not res:
+                # Maybe the user is asking for the "self" default
+                if sub_in in ("self", "me"):
+                    sub_in = b.DEFAULT_SUBJECT_PATH
+                    res = b.subject_subgraph(sub_in)[:args.limit]
+            human = (f"🧠 subject sub-graph: {sub_in} ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts for subject '{sub_in}'."
+            out({"subject": sub_in, "concepts": res}, human)
 
         elif args.cmd == "show":
             matches = [b.get(args.ident)] if b.get(args.ident) else b.get_by_title(args.ident)

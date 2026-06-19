@@ -687,6 +687,79 @@ class TestBrain(unittest.TestCase):
         rels = self.b.related(id_a)
         self.assertTrue(any(r["id"] == id_b for r in rels))
 
+    # -----------------------------------------------------------------------
+    # 8. Subjects (G08 / R10)
+    # -----------------------------------------------------------------------
+
+    def test_subject_index_populated_on_add(self):
+        """live add() registers the default /people/self.md subject even
+        when no sb_subject is passed."""
+        dr = self.b.add("Title", "body", collection="notes")
+        rows = self.b.con.execute(
+            "SELECT subject_id FROM concept_subject WHERE concept_id=?", (dr["id"],)
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["subject_id"], "/people/self.md")
+
+    def test_subject_subgraph_returns_only_subject_concepts(self):
+        """subject_subgraph(path) returns exactly the concepts linked to
+        that subject — no leakage from other subjects."""
+        # Three concepts about rox, one about alex, one with default
+        self.b.add("R1", "r1 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("R2", "r2 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("R3", "r3 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("A1", "a1 body", collection="traits",
+                   sb_subject="/people/alex.md")
+        self.b.add("Mine", "my body", collection="notes")  # default self
+        rox = self.b.subject_subgraph("/people/rox.md")
+        self.assertEqual(sorted(c["title"] for c in rox), ["R1", "R2", "R3"])
+        alex = self.b.subject_subgraph("/people/alex.md")
+        self.assertEqual([c["title"] for c in alex], ["A1"])
+        # No leakage
+        for c in rox:
+            self.assertNotIn(c["title"], ("A1", "Mine"))
+
+    def test_subject_subgraph_default_is_self(self):
+        """A concept with no sb_subject is reachable via /people/self.md."""
+        self.b.add("Lunch", "ate sandwich", collection="notes")
+        mine = self.b.subject_subgraph("/people/self.md")
+        self.assertEqual([c["title"] for c in mine], ["Lunch"])
+
+    def test_subject_subgraph_unknown_returns_empty(self):
+        """subject_subgraph(unknown) returns [] not raise."""
+        self.b.add("A", "a", collection="notes")
+        self.assertEqual(self.b.subject_subgraph("/people/ghost.md"), [])
+
+    def test_subject_change_via_update(self):
+        """update(id, sb_subject=X) re-links the concept to the new subject."""
+        dr = self.b.add("X", "body", collection="notes",
+                        sb_subject="/people/rox.md")
+        self.assertEqual(
+            self.b.con.execute(
+                "SELECT subject_id FROM concept_subject WHERE concept_id=?",
+                (dr["id"],)).fetchone()["subject_id"],
+            "/people/rox.md",
+        )
+        self.b.update(dr["id"], sb_subject="/people/alex.md")
+        row = self.b.con.execute(
+            "SELECT subject_id FROM concept_subject WHERE concept_id=?",
+            (dr["id"],)).fetchone()
+        self.assertEqual(row["subject_id"], "/people/alex.md")
+
+    def test_subjects_lists_known_subjects(self):
+        """subjects() returns all distinct subjects with their concept count."""
+        self.b.add("R1", "r1", collection="notes", sb_subject="/people/rox.md")
+        self.b.add("R2", "r2", collection="notes", sb_subject="/people/rox.md")
+        self.b.add("A1", "a1", collection="notes", sb_subject="/people/alex.md")
+        self.b.add("M1", "m1", collection="notes")  # default
+        subs = {s["sb_id"]: s["concept_count"] for s in self.b.subjects()}
+        self.assertEqual(subs["/people/self.md"], 1)
+        self.assertEqual(subs["/people/rox.md"], 2)
+        self.assertEqual(subs["/people/alex.md"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

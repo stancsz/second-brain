@@ -30,6 +30,12 @@ Match the user's phrasing to the right subcommand. If they say:
 - `/brain summary` → brain health.
   - Command: `brain summary`. Propose action if it recommends, never act
     unprompted on `archive` or `distill --activate`.
+- `/brain recall <person>` → "what do I know about <person>?" (psych subjects).
+  - Command: `brain recall-subject <person-or-path>`. Accepts a path
+    (`/people/rox.md`) or a name (`rox`, `Rox`). Returns the live
+    subject sub-graph: every Concept tagged `sb_subject: /people/<name>.md`
+    (or the implicit `/people/self.md` for unset memories). Pair with
+    `/brain show <id>` to read the most relevant 1–2 entries.
 
 ## Output rules
 

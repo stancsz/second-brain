@@ -305,6 +305,10 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
         if c["sb_deleted"]:
             continue
         brain._resolve_pending_to(c["sb_id"], c["title"])
+    # Re-sync the derived subject index (subjects + concept_subject) from
+    # concepts.metadata. This is the R10 path: a persona sub-graph query must
+    # be correct after a bundle rebuild, with no separate state to keep aligned.
+    brain.rebuild_subject_index()
     brain.con.commit()
     return brain
 
