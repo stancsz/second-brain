@@ -9,7 +9,6 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 |---|---|---|---|---|---|---|---|
 | G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
 | G06 | reliability | Per-Concept conflict parking (`*.conflict.md`) + `/brain-conflicts` + `/brain-resolve` | No multi-device story; nothing handles divergence | 4 | 3 | 4 | 5.33 |
-| G07 | reliability | Tombstone deletes (`sb_deleted` + `.trash/`) that propagate over git | Current soft-delete is DB-only, won't sync | 3 | 2 | 4 | 6.0 |
 | G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | Research+docs identify this as the differentiator; nothing built | 5 | 4 | 4 | 5.0 |
 | G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti have it; we don't; docs/04 specs it | 5 | 4 | 4 | 5.0 |
 | G10 | features | Structured affect (`sb_affect`) + affect table | Needed for emotional mimic agents; not built | 4 | 3 | 4 | 5.33 |
@@ -30,6 +29,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G02 | features | iter-2 | Bundle export/rebuild `scripts/bundle.py`; verifier bundle-rebuild. SQLite disposable. Cooldown until iter-8. |
 | G03 | features | iter-3 | OKF reserved files in `bundle.export`; verifier index-log. Bundle OKF-conformant. Cooldown until iter-9. |
 | G05 | features | iter-4 | Git sync spine `scripts/sync.py`; verifier git-sync. Multi-device portable. Cooldown until iter-10. |
+| G07 | reliability | iter-5 | Tombstone deletes + incremental export `bundle.py`/`sync.py`; verifier tombstone. Cooldown until iter-11. |
 
 ## Parked
 _(none yet)_
