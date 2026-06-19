@@ -7,7 +7,7 @@ These are the *target* design; the currently-shipped system is described in
 Read in order:
 
 1. [01-overview-and-decisions.md](./01-overview-and-decisions.md) — what we're building and why; locked decisions.
-2. [02-okf-and-terminology.md](./02-okf-and-terminology.md) — OKF v0.1 summary and the SecondBrain→OKF rename (drawer→Concept, …).
+2. [02-okf-and-terminology.md](./02-okf-and-terminology.md) — OKF v0.1 summary and the SecondBrain→OKF rename (concept→Concept, …).
 3. [03-sync-architecture.md](./03-sync-architecture.md) — files-as-truth, git sync spine, scheduling, conflicts, deletes.
 4. [04-psychological-memory.md](./04-psychological-memory.md) — temporal validity, subjects, affect, memory kinds (the differentiator).
 5. [05-backends-and-encryption.md](./05-backends-and-encryption.md) — backup adapters and selective encryption.

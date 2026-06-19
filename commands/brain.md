@@ -13,7 +13,7 @@ itself stays the source of truth — this just translates intent.
 
 Match the user's phrasing to the right subcommand. If they say:
 
-- `/brain add "Title" "Content" [tags]` → save a drawer.
+- `/brain add "Title" "Content" [tags]` → save a concept.
   - Infer 2–5 tags, pick a collection if obvious (use the four-collection
     taxonomy `Decisions` / `Preferences` / `Facts` / `Knowledge` only if
     the content is clearly distilled conversational know-how; otherwise
@@ -21,8 +21,8 @@ Match the user's phrasing to the right subcommand. If they say:
   - Command: `brain add "<title>" "<content>" [--collection C] [--tags a,b]`.
 - `/brain search "query"` → find notes.
   - Command: `brain search "<query>" [--collection C] [--tag T] [--limit N]`.
-  - Synthesize a short answer citing 8-char drawer ids. Don't dump raw results.
-- `/brain show <id-or-title>` → open one drawer.
+  - Synthesize a short answer citing 8-char concept ids. Don't dump raw results.
+- `/brain show <id-or-title>` → open one concept.
   - Command: `brain show <id-or-title>`. If title is ambiguous, list matches
     and ask which.
 - `/brain list [--collection X]` → browse.
@@ -43,7 +43,7 @@ Match the user's phrasing to the right subcommand. If they say:
 If the user is loose ("catch me up on Braid", "what do I know about RAG?"),
 interpret as the most-likely action: `list --collection Braid --sort updated`
 for prep, `search RAG` for recall. Read the top 5, give a 3-paragraph brief,
-surface the most-linked drawer (`related` / `traverse`).
+surface the most-linked concept (`related` / `traverse`).
 
 ## Examples
 

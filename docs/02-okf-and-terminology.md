@@ -17,22 +17,25 @@ Source: `GoogleCloudPlatform/knowledge-catalog/okf/SPEC.md` (v0.1, 2026-06-12).
   Everything else is soft guidance.
 
 ## The rename — OKF terminology becomes canonical
-We adopt OKF names throughout code, schema, CLI, and docs. Where SecondBrain and OKF disagree, OKF wins.
+We adopt OKF names throughout code, schema, CLI, and docs. Where SecondBrain and OKF disagree, OKF wins. The v2.1 model term was renamed to `Concept` everywhere — schema, CLI, hooks, docs (see the
+comparison in `.mochu/ledger.md` iter-12 and the v2.1→v3.0 migration in
+`scripts/brain.py:_migrate_v21_to_concepts`). What follows describes the
+**current** canonical state.
 
-| Old SecondBrain term | New canonical term | Notes |
+| Canonical term | Where it lives | Notes |
 |---|---|---|
-| `drawer` | **Concept** | Table `drawers` → `concepts`; CLI `/brain-add` writes a Concept. |
-| `drawer.id` (UUID) | **`sb_id`** (frontmatter) | Durable identity; the OKF Concept ID (path) is the human address. |
-| `drawer.content` | **body** | The markdown body of the Concept file. |
-| `collection` | **collection** (kept) | OKF leaves directory grouping to producers; `collection` = the Concept's subdirectory within the Bundle. Fully OKF-legal. |
-| whole store | **Bundle** | The vault directory `~/.secondbrain/okf/`. |
-| `tags` | **tags** | Already matches OKF. |
-| `[[wikilink]]` / `relations` | **Link** | Emitted as OKF bundle-relative markdown links; typed edges mirrored in `sb_relations`. |
-| `sources` (urls) | **`resource`** + **`# Citations`** | `resource` = first canonical URI; rest go under a `# Citations` section. |
-| `updated_at` | **`timestamp`** | ISO 8601. |
-| `deleted_at` | **`sb_deleted`** | Tombstone timestamp in frontmatter; file moved to `.trash/`. |
+| **Concept** | one markdown file | Table `concepts`; CLI `/brain-add` writes a Concept. |
+| **`sb_id`** (UUID) | frontmatter | Durable identity; the OKF Concept ID (path) is the human address. |
+| **body** | markdown body | The actual content of the Concept file. |
+| **collection** (kept) | subdirectory under the bundle root | OKF leaves directory grouping to producers; `collection` = the Concept's subdirectory within the Bundle. Fully OKF-legal. |
+| **Bundle** | the vault directory `~/.secondbrain/okf/` | The whole store. |
+| **tags** | frontmatter list | Already matches OKF. |
+| **Link** | markdown link + `sb_relations` mirror | Emitted as OKF bundle-relative markdown links; typed edges mirrored in `sb_relations`. |
+| **`resource`** + **`# Citations`** | frontmatter + body | `resource` = first canonical URI; rest go under a `# Citations` section. |
+| **`timestamp`** | frontmatter | ISO 8601. |
+| **`sb_deleted`** | frontmatter | Tombstone timestamp; file moved to `.trash/`. |
 
-> Migration keeps the UUIDs: each existing `drawer.id` becomes that Concept's `sb_id`.
+> Migration keeps the UUIDs: each existing v2.1 record's UUID becomes that Concept's `sb_id`.
 
 ## Model mapping
 

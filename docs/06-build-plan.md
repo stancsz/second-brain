@@ -6,7 +6,7 @@ Phased and testable. Each phase ends green on `tests/` before the next begins. m
 - `okf.py`: Concept ⇄ markdown file (frontmatter parse/emit, `sb_*` keys, links by path↔`sb_id`).
 - `rebuild()`: walk Bundle → fresh `brain.db` (concepts, tags, links, FTS).
 - Generate `index.md` / `log.md`; pin `okf_version: "0.1"` in root `index.md`.
-- Rename `drawer`→`Concept` across schema/CLI/code (see [02](./02-okf-and-terminology.md)).
+- Rename `concept`→`Concept` across schema/CLI/code (see [02](./02-okf-and-terminology.md)).
 - **Test:** round-trip identity — `DB → files → DB` reproduces the store; OKF conformance lint passes.
 - **Ships:** portability + Obsidian compatibility, *no sync yet*.
 

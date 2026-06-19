@@ -7,7 +7,7 @@ on the same schema, on the same `brain.db` file format, and round-trip via
 Read this when:
 - The brain is over 100 MB and you want to make a smaller working copy.
 - You want to focus on a topic and quiet everything else.
-- You need to recover archived drawers (the round-trip).
+- You need to recover archived concepts (the round-trip).
 
 Day-to-day use doesn't need this file.
 
@@ -20,7 +20,7 @@ Day-to-day use doesn't need this file.
 | Goal | Goal-based filtering | Cold storage |
 | Typical trigger | "I want to focus on X" | "Brain is full of old stuff" |
 | Effect on working brain | None (unless `--activate`) | Hard-delete after copy |
-| Atomic | The copy is atomic per drawer batch | Yes — copy first, delete second; copy failure leaves the working brain untouched |
+| Atomic | The copy is atomic per concept batch | Yes — copy first, delete second; copy failure leaves the working brain untouched |
 | Reversible | Just delete the new file | `merge-brain --from <archive>` |
 | Adds to working brain | No | No (the opposite) |
 
@@ -31,7 +31,7 @@ partial export.
 ## Distill
 
 `distill` creates a new `brain.db` at `--output` containing only the
-drawers that match the given filters. The working brain is **not
+concepts that match the given filters. The working brain is **not
 modified** unless you pass `--activate`, which renames:
 
 - working brain → `brain.db.bak-{TIMESTAMP}` (a point-in-time backup)
@@ -39,12 +39,12 @@ modified** unless you pass `--activate`, which renames:
 
 ### Filter semantics
 
-A drawer is included if it satisfies **all** given filter categories.
+A concept is included if it satisfies **all** given filter categories.
 Within a category, multiple values are OR'd:
 
 | Flag | Category | Multiple values | Example |
 |---|---|---|---|
-| `--tag` | Tags | OR (drawer has any of these) | `--tag ai --tag ml` |
+| `--tag` | Tags | OR (concept has any of these) | `--tag ai --tag ml` |
 | `--collection` | Collection | OR | `--collection Work` (single) |
 | `--query` | FTS query | (single) | `--query "transformer attention"` |
 | `--since` / `--until` | Date range on `updated_at` | AND (range) | `--since 2026-01-01 --until 2026-06-01` |
@@ -56,19 +56,19 @@ along the relations graph (using the existing `traverse` CTE).
 
 | Object | Behavior |
 |---|---|
-| `drawers` | Rows whose id is in the seed set, **with original ids, timestamps, and metadata preserved** |
-| `tags` | Only tags actually used by the copied drawers; new tag ids are minted |
+| `concepts` | Rows whose id is in the seed set, **with original ids, timestamps, and metadata preserved** |
+| `tags` | Only tags actually used by the copied concepts; new tag ids are minted |
 | `relations` | Edges where **both** endpoints are in the copied set; original ids preserved |
-| `pending_links` | Pending links from any copied drawer (target may be in or out of the set) |
+| `pending_links` | Pending links from any copied concept (target may be in or out of the set) |
 | FTS index | Rebuilt by the schema triggers when the new brain is opened |
-| `drawers_fts` | Triggers on the new brain re-derive everything from the copied drawers |
+| `concepts_fts` | Triggers on the new brain re-derive everything from the copied concepts |
 | Soft-deleted rows | **Excluded** from the seed set by the `deleted_at IS NULL` filter |
 
 ### What does NOT get copied
 
-- Soft-deleted drawers
+- Soft-deleted concepts
 - Manual / wikilink relations where one side wasn't matched
-- Tags that no copied drawer uses
+- Tags that no copied concept uses
 - The FTS index (it's rebuilt from scratch)
 
 ### `--activate` semantics
@@ -90,12 +90,12 @@ renamed to a `.bak-*` file.
 ## Archive
 
 `archive` is the destructive counterpart: it copies cold/filtered
-drawers to a new archive brain, then **hard-deletes** them from the
+concepts to a new archive brain, then **hard-deletes** them from the
 working brain, and runs `VACUUM` to reclaim disk space.
 
 ### Default criterion
 
-`updated_at < (now - --older-than-days)`. Default 180 days. A drawer
+`updated_at < (now - --older-than-days)`. Default 180 days. A concept
 that was edited yesterday is never archived by the default criterion.
 
 ### Explicit filter override
@@ -120,7 +120,7 @@ exist before the call; pass a new path or remove the existing file.
 
 `archive` refuses to run if:
 
-- The target set equals every alive drawer (would leave the brain
+- The target set equals every alive concept (would leave the brain
   empty). Narrow your filter or check `--older-than-days`.
 - The output path already exists. Pick a new path or remove the file.
 - The output path's parent doesn't exist (we `mkdir -p` it; usually
@@ -132,28 +132,28 @@ exist before the call; pass a new path or remove the existing file.
 # archive
 brain archive --output ~/.secondbrain/archive-2026.db
 
-# ...later, want one drawer back? Open the archive as a brain and find it:
-sqlite3 ~/.secondbrain/archive-2026.db "SELECT id, title FROM drawers WHERE title LIKE '%foo%'"
+# ...later, want one concept back? Open the archive as a brain and find it:
+sqlite3 ~/.secondbrain/archive-2026.db "SELECT id, title FROM concepts WHERE title LIKE '%foo%'"
 
-# then bring everything back (idempotent — only the missing drawers land)
+# then bring everything back (idempotent — only the missing concepts land)
 brain merge-brain --from ~/.secondbrain/archive-2026.db
 ```
 
 ## merge-brain
 
-`merge-brain --from <path>` brings drawers from another brain.db into
+`merge-brain --from <path>` brings concepts from another brain.db into
 the working brain. It is:
 
-- **Idempotent** — drawers whose `id` already exists are skipped.
+- **Idempotent** — concepts whose `id` already exists are skipped.
   Same for tags-by-name, relations (UNIQUE on
-  `from_id+to_id+source`), drawer_tags, and pending_links.
-- **Re-derives wikilinks** for the newly inserted drawers, so
+  `from_id+to_id+source`), concept_tags, and pending_links.
+- **Re-derives wikilinks** for the newly inserted concepts, so
   `[[X]]` references inside the new content point at the right ids in
   the merged graph.
 - **Resolves pending links** for the new titles, so any pending
-  `[[X]]` from before the merge now points at the imported drawer.
+  `[[X]]` from before the merge now points at the imported concept.
 
-If you ran `archive` and a drawer in the archive referenced a drawer
+If you ran `archive` and a concept in the archive referenced a concept
 that's still in the working brain via wikilink, `merge-brain` will
 restore that edge (the relation has the original id, which is now
 present again).
@@ -161,20 +161,20 @@ present again).
 ## Why this is "like agent context compression"
 
 Agent context compression keeps the most relevant tokens and drops
-the rest. `second-brain` does the same at the drawer granularity:
+the rest. `second-brain` does the same at the concept granularity:
 
 - **Distill** = "keep tokens relevant to topic X"
 - **Archive** = "drop tokens I haven't looked at in 6 months"
 - **merge-brain** = "if a relevant token comes back into scope, restore it"
 
-The granularity is coarser (drawer, not token), but the operating
+The granularity is coarser (concept, not token), but the operating
 principle is identical. The user's "new 10 MB brain again" workflow
 is literally context compression: shrink the working set, keep the
 old as a recoverable cold store, restore on demand.
 
 ## Performance
 
-| Op | 50K drawers | Notes |
+| Op | 50K concepts | Notes |
 |---|---|---|
 | `summary` | < 50 ms | Three COUNT queries, one file stat |
 | `distill` (small filter, 200 matches) | < 200 ms | FTS or index lookup, copy + writes |

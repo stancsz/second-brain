@@ -36,7 +36,7 @@
 
 ## 功能
 
-- **扁平知识图谱。** 笔记(Drawer)携带标签、可选的 collection(集合),以及类型化的关系。没有需要维护的目录树。
+- **扁平知识图谱。** 笔记(Concept)携带标签、可选的 collection(集合),以及类型化的关系。没有需要维护的目录树。
 - **`[[wikilinks]]` 自动建链。** 正文里的双向链接在写入时即被解析,关系永远不会与正文漂移。
 - **Pending links(待定链接)。** 指向尚未存在笔记的前向引用会先存在一张带索引的表里,目标笔记一创建就自动转正。
 - **全文检索。** SQLite FTS5,自动忽略软删除的笔记。在 5 万条笔记规模下返回结果 < 100ms。
@@ -147,7 +147,7 @@ cp <repo>/settings.example.json .claude/settings.json
 
 设计原则就一句:**日志归日志,脑子保持干净。** 原始 transcript 进 `~/.secondbrain/logs/` 纯文件;提炼出的 know-how 进脑子。这会接入三个 hook:
 
-- **`Stop`**(`hooks/capture_conversation.py`)— 把 transcript 存到磁盘日志,然后提示 agent 一次,把这次对话里值得留下的决策/偏好/事实提炼成干净的 drawer 存进脑子(不是原始 transcript)。静默、不会卡住会话,审计写在 `hooks/capture_conversation.log`。
+- **`Stop`**(`hooks/capture_conversation.py`)— 把 transcript 存到磁盘日志,然后提示 agent 一次,把这次对话里值得留下的决策/偏好/事实提炼成干净的 concept 存进脑子(不是原始 transcript)。静默、不会卡住会话,审计写在 `hooks/capture_conversation.log`。
 - **`PreCompact`** *(可选)* — 长会话上下文压缩前快照一份日志,不做提炼。觉得吵就注释掉。
 - **`UserPromptSubmit`**(`hooks/recall_memories.py`)— 主动回忆:拿每条 prompt 检索干净的脑子,把相关笔记注入上下文。
 

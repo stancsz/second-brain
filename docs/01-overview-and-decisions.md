@@ -17,7 +17,7 @@ Three intertwined upgrades:
 | Source of truth | **OKF files on disk** | Deletes the DB-vs-file conflict problem; SQLite becomes a <5s rebuildable cache. |
 | Sync model | **Git spine + one-way backups** | Git already is a hardened multi-master, offline, conflict-resolving sync engine. Don't rebuild it over Drive's API. |
 | On-disk format | **Markdown + OKF YAML frontmatter** | This *is* native OKF v0.1. Human-readable, diffable, Obsidian-compatible. |
-| OKF fidelity | **Follow OKF as closely as possible; rename our model to match** | `drawer`→`Concept`, etc. Our richness rides in `sb_*` keys, which OKF blesses. |
+| OKF fidelity | **Follow OKF as closely as possible; rename our model to match** | `concept`→`Concept`, etc. Our richness rides in `sb_*` keys, which OKF blesses. |
 | Psych schema | Temporal validity + subjects + structured affect + trait/value/pattern kinds | The actual differentiator; sync is plumbing. |
 | Encryption | **Selective by tag** | Plaintext+diffable for normal notes; `private`/`psych` Concepts encrypted before push. |
 | Deps | **Minimal, justified, lazy-imported** | Core dep-free; adapters import their SDK only when used. |
