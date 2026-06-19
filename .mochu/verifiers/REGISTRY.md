@@ -7,3 +7,4 @@ Run all via `python3 scripts/run_corpus.py`.
 |---|---|---|---|---|
 | okf-roundtrip | features | Concept ⇄ OKF markdown round-trips losslessly across all fields incl. sb_* | `python .mochu/verifiers/G01/verify_roundtrip.py` | iter-1 |
 | okf-conformance | features | Every emitted Concept document conforms to OKF v0.1 §9 (non-empty type, frontmatter, path↔id, citations) | `python .mochu/verifiers/G01/verify_conformance.py` | iter-1 |
+| bundle-rebuild | features | Export→rebuild reproduces a fresh brain.db losslessly (drawers, tags, sources, relations, soft-delete, FTS) — SQLite is disposable | `python .mochu/verifiers/G02/verify_rebuild.py` | iter-2 |
