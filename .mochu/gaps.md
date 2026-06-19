@@ -7,7 +7,6 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
-| G03 | features | Generate reserved `index.md` / `log.md` per directory; pin `okf_version: 0.1` at root | No OKF bundle output; not conformant. **bundle.export now exists to extend.** | 3 | 2 | 5 | 7.5 |
 | G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
 | G05 | features | `brain sync` git spine: serialize→commit→pull --rebase→push→rebuild | No sync of any kind today | 5 | 4 | 4 | 5.0 |
 | G06 | reliability | Per-Concept conflict parking (`*.conflict.md`) + `/brain-conflicts` + `/brain-resolve` | No multi-device story; nothing handles divergence | 4 | 3 | 4 | 5.33 |
@@ -30,6 +29,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 |---|---|---|---|
 | G01 | features | iter-1 | OKF serializer `scripts/okf.py`; verifiers okf-roundtrip + okf-conformance. Cooldown until iter-7. |
 | G02 | features | iter-2 | Bundle export/rebuild `scripts/bundle.py`; verifier bundle-rebuild. SQLite disposable. Cooldown until iter-8. |
+| G03 | features | iter-3 | OKF reserved files in `bundle.export`; verifier index-log. Bundle OKF-conformant. Cooldown until iter-9. |
 
 ## Parked
 _(none yet)_
