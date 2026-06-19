@@ -20,6 +20,15 @@ import tempfile
 import shutil
 from pathlib import Path
 
+# Windows cp1252 stdout silently swallows → (→) and other non-Latin-1 chars
+# before the print ever reaches the user — same bug class the G19 hook fix closed
+# (see scripts/brain_cli.py:37). Reconfigure FIRST so a failure message that quotes
+# README.md verbatim (which may contain arrows) is not lost.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 def check_file_content(path: Path, checks: list) -> list:
     """Run a list of regex checks against file content. Returns list of failures."""
