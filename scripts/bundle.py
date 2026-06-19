@@ -176,8 +176,9 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
     current: dict = {}
     for f in bundle_dir.rglob("*.md"):
         rel = f.relative_to(bundle_dir).as_posix()
-        if rel.startswith(".git/") or "/.git/" in rel or f.name in ("index.md", "log.md"):
-            continue
+        if (rel.startswith(".git/") or "/.git/" in rel
+                or f.name in ("index.md", "log.md") or rel.endswith(".conflict.md")):
+            continue  # conflict copies are opaque — never managed/removed by export
         sbid = _read_sb_id(f)
         if sbid:
             current[sbid] = rel
@@ -275,8 +276,8 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
         if f.name in ("index.md", "log.md"):
             continue
         rel = f.relative_to(bundle_dir).as_posix()
-        if rel.startswith(".git/") or "/.git/" in rel:
-            continue
+        if rel.startswith(".git/") or "/.git/" in rel or rel.endswith(".conflict.md"):
+            continue  # conflict copies await human resolution; not imported as drawers
         # Tombstones live under .trash/; strip the prefix so the original
         # collection is recovered from the path (sb_deleted drives the state).
         parse_path = rel[len(".trash/"):] if rel.startswith(".trash/") else rel

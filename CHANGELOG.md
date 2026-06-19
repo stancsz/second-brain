@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- **Conflict parking** (`scripts/sync.py`) — when two devices edit the same concept concurrently,
+  `sync` no longer crashes or clobbers: the rebase conflict is parked — the upstream version stays
+  canonical and the incoming local edit is written to a sibling `<slug>.conflict.md`, leaving a
+  clean working tree. `conflicts(bundle)` lists parked copies; they are never imported as drawers
+  or touched by export until a human resolves them (resolve = delete the conflict file). Both edits
+  are preserved. (mochu iter-6, gap G06)
 - **Tombstone deletes over git** (`scripts/bundle.py`, `scripts/sync.py`) — deletes now survive
   sync: a soft-delete moves the concept to `.trash/` as a tombstone and propagates to other
   devices; `restore` moves it back and propagates; a hard-delete removes the file so it is gone

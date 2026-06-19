@@ -56,6 +56,84 @@ def _is_fresh_device(db_path, bundle_dir) -> bool:
     return n == 0
 
 
+def _rebase_in_progress(bundle_dir) -> bool:
+    g = Path(bundle_dir) / ".git"
+    return (g / "rebase-merge").exists() or (g / "rebase-apply").exists()
+
+
+def _conflict_name(bundle_dir, rel) -> str:
+    base = rel[:-3] if rel.endswith(".md") else rel
+    cand = f"{base}.conflict.md"
+    i = 2
+    while (Path(bundle_dir) / cand).exists():
+        cand = f"{base}.conflict.{i}.md"
+        i += 1
+    return cand
+
+
+def _take_stage(bundle_dir, rel, stage) -> None:
+    """Resolve a conflicted path by taking one stage (e.g. ':2' = ours/upstream)."""
+    r = _git(["show", f"{stage}:{rel}"], bundle_dir, check=False)
+    p = Path(bundle_dir) / rel
+    if r.returncode == 0:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(r.stdout, encoding="utf-8")
+        _git(["add", "--", rel], bundle_dir, check=False)
+    else:
+        # Added on only one side / deleted: fall back to checkout --ours.
+        if _git(["checkout", "--ours", "--", rel], bundle_dir, check=False).returncode == 0:
+            _git(["add", "--", rel], bundle_dir, check=False)
+        else:
+            _git(["rm", "-f", "--", rel], bundle_dir, check=False)
+
+
+def _is_concept_rel(rel) -> bool:
+    name = rel.rsplit("/", 1)[-1]
+    return (rel.endswith(".md") and name not in ("index.md", "log.md")
+            and not rel.endswith(".conflict.md"))
+
+
+def _park_rebase_conflicts(bundle_dir) -> list:
+    """Drive a conflicted rebase to completion by parking each conflicting
+    concept: keep the upstream version (stage :2, 'ours' during rebase) as
+    canonical and write the incoming local version (stage :3) to a sibling
+    `<slug>.conflict.md`. Reserved/other files take the upstream side (they are
+    regenerated on the next export). Leaves a clean tree."""
+    parked = []
+    for _ in range(200):  # safety cap over multiple replayed commits
+        if not _rebase_in_progress(bundle_dir):
+            break
+        unmerged = _git(["diff", "--name-only", "--diff-filter=U"], bundle_dir,
+                        check=False).stdout.split()
+        for rel in unmerged:
+            if _is_concept_rel(rel):
+                ours = _git(["show", f":2:{rel}"], bundle_dir, check=False).stdout
+                theirs = _git(["show", f":3:{rel}"], bundle_dir, check=False).stdout
+                cpath = _conflict_name(bundle_dir, rel)
+                (Path(bundle_dir) / rel).write_text(ours, encoding="utf-8")
+                (Path(bundle_dir) / cpath).write_text(theirs, encoding="utf-8")
+                _git(["add", "--", rel, cpath], bundle_dir, check=False)
+                parked.append(cpath)
+            else:
+                _take_stage(bundle_dir, rel, ":2")
+        cont = _git(["-c", "core.editor=true", "rebase", "--continue"],
+                    bundle_dir, check=False)
+        still = _git(["diff", "--name-only", "--diff-filter=U"], bundle_dir,
+                     check=False).stdout.strip()
+        if cont.returncode != 0 and not still and _rebase_in_progress(bundle_dir):
+            # Cannot make progress — abort to guarantee a clean tree.
+            _git(["rebase", "--abort"], bundle_dir, check=False)
+            break
+    return parked
+
+
+def conflicts(bundle_dir) -> list:
+    """List parked conflict copies (bundle-relative paths) awaiting resolution."""
+    bundle_dir = Path(bundle_dir)
+    return sorted(f.relative_to(bundle_dir).as_posix()
+                  for f in bundle_dir.rglob("*.conflict.md"))
+
+
 def _current_branch(bundle_dir):
     r = _git(["rev-parse", "--abbrev-ref", "HEAD"], bundle_dir, check=False)
     if r.returncode != 0:
@@ -100,10 +178,13 @@ def sync(db_path, bundle_dir, remote=None, message="secondbrain sync") -> dict:
     branch = _current_branch(bundle_dir)
     pulled = pushed = False
     if remote and branch:
-        # 3. Pull --rebase if the remote already has this branch.
+        # 3. Pull --rebase if the remote already has this branch. On a conflict
+        #    (concurrent edits to the same concept), park instead of crashing.
         ls = _git(["ls-remote", "--heads", "origin", branch], bundle_dir, check=False)
         if ls.stdout.strip():
-            _git(["pull", "--rebase", "origin", branch], bundle_dir)
+            pr = _git(["pull", "--rebase", "origin", branch], bundle_dir, check=False)
+            if pr.returncode != 0:
+                _park_rebase_conflicts(bundle_dir)
             pulled = True
         # 4. Push.
         _git(["push", "-u", "origin", branch], bundle_dir)
