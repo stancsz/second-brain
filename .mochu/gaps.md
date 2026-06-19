@@ -1,0 +1,36 @@
+# Gap Register
+
+Scored: score = impact × confidence / effort (each 1-5). Seeded from `docs/` build plan (Phases A–E)
+plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
+
+## Active
+
+| id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
+|---|---|---|---|---|---|---|---|
+| G01 | features | OKF serializer: Concept ⇄ markdown+frontmatter round-trip, with `sb_*` keys & path↔`sb_id` link resolution | No OKF code exists; `scripts/brain.py` only speaks SQLite; nothing writes files | 5 | 4 | 5 | 6.25 |
+| G02 | features | `rebuild()` — walk Bundle → fresh brain.db (concepts, tags, links, FTS); make DB disposable | DB is currently authoritative; no rebuild path exists | 5 | 3 | 5 | 8.33 |
+| G03 | features | Generate reserved `index.md` / `log.md` per directory; pin `okf_version: 0.1` at root | No OKF bundle output; not conformant | 3 | 2 | 5 | 7.5 |
+| G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
+| G05 | features | `brain sync` git spine: serialize→commit→pull --rebase→push→rebuild | No sync of any kind today | 5 | 4 | 4 | 5.0 |
+| G06 | reliability | Per-Concept conflict parking (`*.conflict.md`) + `/brain-conflicts` + `/brain-resolve` | No multi-device story; nothing handles divergence | 4 | 3 | 4 | 5.33 |
+| G07 | reliability | Tombstone deletes (`sb_deleted` + `.trash/`) that propagate over git | Current soft-delete is DB-only, won't sync | 3 | 2 | 4 | 6.0 |
+| G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | Research+docs identify this as the differentiator; nothing built | 5 | 4 | 4 | 5.0 |
+| G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti have it; we don't; docs/04 specs it | 5 | 4 | 4 | 5.0 |
+| G10 | features | Structured affect (`sb_affect`) + affect table | Needed for emotional mimic agents; not built | 4 | 3 | 4 | 5.33 |
+| G11 | features | `Backend` interface + S3/GCS adapters (one-way mirror) | "any cloud db / s3 / gcs" requested; none exist | 4 | 4 | 4 | 4.0 |
+| G12 | features | Google Drive / OneDrive backup adapters (MCP-first) | Requested; MCP connectors available in session | 4 | 4 | 3 | 3.0 |
+| G13 | trust | Selective-by-tag encryption (age) for private/psych Concepts before push | Psych data would hit remotes in plaintext otherwise | 5 | 4 | 3 | 3.75 |
+| G14 | docs | SKILL.md + README updated to OKF terminology & new capabilities | Docs still describe SQLite-only drawer model | 3 | 2 | 4 | 6.0 |
+| G15 | reliability | Hook + OS-scheduler install (`install.sh`) for scheduled sync | install.sh has no scheduler entry | 3 | 3 | 3 | 3.0 |
+| G16 | performance | Incremental (mtime-based) rebuild for large Bundles | Full walk only; risk at scale | 2 | 3 | 3 | 2.0 |
+| G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned | 4 | 3 | 4 | 5.33 |
+| G18 | features | Mem0-style preference-consolidation (update existing memory on correction vs duplicate) | Competitive delta vs Mem0; future | 3 | 4 | 2 | 1.5 |
+
+## Parked
+_(none yet)_
+
+## Notes
+- Natural build order is the docs Phase A→E sequence: G01/G02/G03/G04 (Phase A) → G05/G06/G07 (B) →
+  G08/G09/G10 (C) → G11/G12/G13 (D) → G14/G15/G16/G17 (E). Scores will re-rank as dependencies clear.
+- G02 scores highest but **depends on G01** (need a serializer before you can rebuild from files).
+  Treat G01→G02→G03→G04 as the Phase-A milestone chain.

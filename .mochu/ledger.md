@@ -1,0 +1,1 @@
+2026-06-18 | iter-0 | bootstrap [recon] mochu init on SecondBrain | SHIPPED | attempts:1 | review: state files seeded from docs/ + research | limitations: no verifiers yet (bootstrap builds none); first real iter targets G01 OKF serializer | learning: OKF v0.1 validates the markdown-as-truth direction and gives free interop | RELEASE 0/15
