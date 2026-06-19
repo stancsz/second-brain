@@ -23,8 +23,13 @@ and S3/GCS/Google Drive/OneDrive are one-way backup mirrors. Extend with a psych
 
 ## Deploy / distribution
 Distributed as a Claude Code skill + plugin (this git repo). No hosted service; "deploy" = the skill
-installed at `~/.claude/skills/second-brain` via `install.sh`. **Merges gated by the human:** each mochu
-iteration works on branch `mochu/<gap-id>` and opens a PR; the human reviews and merges to `main`.
+installed at `~/.claude/skills/second-brain` via `install.sh`. **Merges gated by the human:** mochu
+iterations commit sequentially onto the single integration branch **`mochu/integration`** (NOT a new
+branch per iteration, and NOT directly to `main`). Each iteration still runs the full ship gate before
+committing. The human reviews the accumulated branch and merges it to `main` (this keeps `main`
+human-gated while giving the unattended loop a stable base — every gap builds on the prior gap's code,
+e.g. G02's `rebuild()` needs G01's `okf.py`, which only exists on the integration branch).
+Do NOT open a PR or merge to `main` from inside an iteration; leave that to the human.
 
 The OKF **Bundle** (source-of-truth files) lives in its **own private repo at `~/.secondbrain/okf/`**,
 separate from this skill repo, so personal/psychological data never mixes with publishable skill code.
