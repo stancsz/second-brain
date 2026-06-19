@@ -7,7 +7,13 @@ Usage: python3 scripts/ship_gate.py [repo_root]"""
 import os, re, subprocess, sys
 
 root = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
-def git(*a): return subprocess.run(["git", *a], cwd=root, capture_output=True, text=True)
+# Force UTF-8 decoding for git output. On Windows the default child-process encoding
+# is cp1252, but our diffs frequently contain CJK titles, emoji, and OKF frontmatter
+# (sb_valid_from unicode) that cp1252 cannot decode — and that would crash the gate
+# mid-read and exit with a stack trace instead of a real PASS/FAIL verdict.
+def git(*a):
+    return subprocess.run(["git", *a], cwd=root, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
 fails = []
 
 # 1) verifier tamper check

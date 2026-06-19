@@ -205,9 +205,22 @@ def _format_context(drawers: list) -> str:
     return "\n".join(lines)
 
 
+def _force_utf8_stdout() -> None:
+    """Ensure stdout can carry the recall block's unicode (header emoji, CJK
+    titles) regardless of the console encoding. On a Windows cp1252 stdout the
+    default would raise UnicodeEncodeError mid-print, and the never-block handler
+    would swallow it — emitting nothing. Reconfigure to UTF-8 so recall actually
+    reaches the model."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
 def main() -> int:
     if os.environ.get("SECONDBRAIN_SKIP_RECALL") == "1":
         return 0
+    _force_utf8_stdout()
 
     payload = _read_payload()
     prompt = payload.get("prompt") or ""
