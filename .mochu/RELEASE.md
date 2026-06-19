@@ -26,4 +26,4 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 - [ ] R14 No secrets ever committed; sync.toml secrets via env/keyring — verifier: secret-scan (ship_gate)
 
 ## Docs
-- [ ] R15 SKILL.md + README describe the OKF model and every shipped capability; a stranger can install and sync — verifier: docs-executable (G14)
+- [x] R15 SKILL.md + README describe the OKF model and every shipped capability; a stranger can install and sync — verifier: docs-executable (G14) — DONE iter-9
