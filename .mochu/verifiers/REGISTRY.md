@@ -5,4 +5,5 @@ Run all via `python3 scripts/run_corpus.py`.
 
 | verifier-id | dimension | claim | run command | added |
 |---|---|---|---|---|
-_(empty — bootstrap iteration builds no verifiers. First real iteration on G01 adds okf-roundtrip / okf-conformance.)_
+| okf-roundtrip | features | Concept ⇄ OKF markdown round-trips losslessly across all fields incl. sb_* | `python .mochu/verifiers/G01/verify_roundtrip.py` | iter-1 |
+| okf-conformance | features | Every emitted Concept document conforms to OKF v0.1 §9 (non-empty type, frontmatter, path↔id, citations) | `python .mochu/verifiers/G01/verify_conformance.py` | iter-1 |
