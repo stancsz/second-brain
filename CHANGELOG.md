@@ -100,3 +100,31 @@
     (G02), generate `index.md`/`log.md` (G03), rename the live `drawer` model to `Concept`
     (G04), or render cross-concept `[[wikilinks]]` as bundle-relative OKF links (those remain
     verbatim in the body for now). No CLI/skill wiring yet.
+
+
+### Added
+- **Subjects + persona sub-graph (R10 M1)** (R10 / G08, mochu iter-14) —
+  every Concept now carries a subject via OKF frontmatter `sb_subject:
+  /people/<slug>.md` (default `/people/self.md`). New SQLite tables
+  `subjects(sb_id, slug, display_name, kind)` and
+  `concept_subject(concept_id, subject_id)` are derived from concepts +
+  Person Concepts at bundle-rebuild time (the DB stays disposable). New
+  public API: `SecondBrain.subject_subgraph(path_or_slug)`, `subjects()`.
+  New CLI: `brain recall-subject <path-or-name>` (e.g.
+  `brain recall-subject rox`, `brain recall-subject /people/alex.md`).
+  `add(title, content, collection, tags, sources, sb_subject=None)` and
+  `update(...)` accept the new field; `update(sb_subject=None)` clears to
+  default, missing-arg preserves. Person Concepts are the SUBJECT
+  themselves, not members of their own sub-graph (Person = index entry;
+  sub-graph = memories about them). commands/brain.md updated with
+  `/brain recall <person>` → `brain recall-subject`. 6 new tests in
+  tests/test_brain.py (51→57). New verifier `subject-subgraph` (14/14
+  corpus). R10 M1 closed; R11 (temporal/--as-of), R12 (affect), and G08
+  M2/M3 remain open.
+  - Known limitations: `subjects()` returns a flat list (no facets/
+    grouping); FK ON DELETE CASCADE is not set on concept_subject
+    (hard-deleting a Person Concept leaves orphan rows until rebuild);
+    `brain recall-subject` (CLI) and `/brain recall <person>` (slash
+    command) don't match docs/04-psychological-memory.md's `/brain-recall`
+    name yet — R15 (docs catch-up) is the right place to fix the doc
+    shape, not here.

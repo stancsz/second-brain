@@ -8,7 +8,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
 | G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | SHIPPED iter-12 (M1+M2: schema, brain.py, brain_cli.py, bundle.py, sync.py, hooks, tests). M3 (commands/, docs/, references/, CHANGELOG narrative, README.zh.md) is new gap G23. Cooldown until iter-18. | 3 | 3 | 4 | 4.0 |
-| G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | Research+docs identify this as the differentiator; nothing built | 5 | 4 | 4 | 5.0 |
+| G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | M1 SHIPPED iter-14 (subjects + concept_subject + subject_subgraph + subjects() + CLI + 6 tests + verifier); M2/M3 OPEN | 5 | 4 | 4 | 5.0 |
 | G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti v0.29.2 ships bi-temporal at MCP parity; we don't | 5 | 4 | 4 | 5.0 |
 | G10 | features | Structured affect (`sb_affect`) + affect table | Needed for emotional mimic agents; not built | 4 | 3 | 4 | 5.33 |
 | G11 | features | `Backend` interface + S3/GCS adapters (one-way mirror) | "any cloud db / s3 / gcs" requested; none exist | 4 | 4 | 4 | 4.0 |
@@ -49,9 +49,11 @@ _(none yet)_
 * **Method:** Run a migration query `ALTER TABLE drawers RENAME TO concepts` and update columns/FKs across the schema. Perform global refactoring in Python code (e.g. `SecondBrain` methods `add_drawer` → `add_concept`) and match CLI subcommands to avoid terminology collision.
 * **Agent Build Rationale:** Excellent for agents because it is a deterministic, highly verifiable text-replacement and schema migration task. The agent can easily use `grep` to ensure 100% coverage across the repository without requiring subjective design decisions.
 
-### G08: Psychological Schema & Subjects
-* **Method:** Add a `subjects` table: `id TEXT PRIMARY KEY, slug TEXT UNIQUE, display_name TEXT, kind TEXT`. Map OKF frontmatter `sb_subject: /people/<slug>.md` to `subject_id` as a foreign key on the `concepts` table.
-* **Agent Build Rationale:** The schema is explicitly defined and localized to `schema.sql` and `okf.py`. An agent can build this autonomously because the data model mapping (frontmatter → JSON → SQL) follows the exact same established pattern as existing fields.
+### G08: Psychological Schema & Subjects — **M1 SHIPPED iter-14, M2/M3 OPEN**
+* **Method:** Add a `subjects` table: `sb_id TEXT PRIMARY KEY, slug TEXT UNIQUE, display_name TEXT, kind TEXT` and a `concept_subject(concept_id, subject_id)` join table. Map OKF frontmatter `sb_subject: /people/<slug>.md` to the join row. Defaults: missing sb_subject → `/people/self.md`; Person Concept → its own path (and not a member of its own sub-graph — Person IS the subject).
+* **M1 SHIPPED iter-14:** schema, rebuild_subject_index, subject_subgraph(), subjects(), `add(sb_subject=...)` / `update(sb_subject=...)` (None clears, missing-arg preserves), `brain recall-subject <path-or-name>` CLI, 6 new tests (51→57), `subject-subgraph` verifier (14/14 corpus).
+* **M2 (TBD):** Tighter `subjects()` (grouped by collection / has-personas), display-name humanization, FK ON DELETE CASCADE for concept_subject.
+* **M3 (TBD):** `RecallHook`/cron: when a new Concept has `sb_subject: /people/X.md`, propose (auto? interactive?) creating the Person Concept if it doesn't exist yet — closes the "forward refs safe but ghost subjects linger" gap.
 
 ### G09: Temporal Validity & Recall
 * **Method:** Add bi-temporal columns (`valid_from`, `valid_to`, `supersedes_id` self-referential FK) on `concepts`. In `recall_memories.py`, add an `--as-of` query filter to retrieve only Concepts that were active at the specified historical moment.

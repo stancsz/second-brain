@@ -17,7 +17,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 - [ ] R9 Scheduled sync runs unattended (hook + OS scheduler installed by install.sh) — verifier: scheduler-install (G15)
 
 ## Psychological memory (mimic-agent foundation)
-- [ ] R10 Memories carry a subject; a persona sub-graph query returns exactly that subject's Concepts — verifier: subject-subgraph (G08)
+- [x] R10 Memories carry a subject; a persona sub-graph query returns exactly that subject's Concepts — verifier: subject-subgraph (G08)
 - [ ] R11 `--as-of <date>` recall returns the historically-valid state; superseded facts are excluded — verifier: temporal-asof (G09)
 - [ ] R12 Structured affect persists and is queryable per Concept — verifier: affect-persist (G10)
 
