@@ -7,8 +7,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
-| G01 | features | OKF serializer: Concept ⇄ markdown+frontmatter round-trip, with `sb_*` keys & path↔`sb_id` link resolution | No OKF code exists; `scripts/brain.py` only speaks SQLite; nothing writes files | 5 | 4 | 5 | 6.25 |
-| G02 | features | `rebuild()` — walk Bundle → fresh brain.db (concepts, tags, links, FTS); make DB disposable | DB is currently authoritative; no rebuild path exists | 5 | 3 | 5 | 8.33 |
+| G02 | features | `rebuild()` — walk Bundle → fresh brain.db (concepts, tags, links, FTS); make DB disposable | DB is currently authoritative; no rebuild path exists. **G01 serializer now available to build on.** | 5 | 3 | 5 | 8.33 |
 | G03 | features | Generate reserved `index.md` / `log.md` per directory; pin `okf_version: 0.1` at root | No OKF bundle output; not conformant | 3 | 2 | 5 | 7.5 |
 | G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
 | G05 | features | `brain sync` git spine: serialize→commit→pull --rebase→push→rebuild | No sync of any kind today | 5 | 4 | 4 | 5.0 |
@@ -25,6 +24,12 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G16 | performance | Incremental (mtime-based) rebuild for large Bundles | Full walk only; risk at scale | 2 | 3 | 3 | 2.0 |
 | G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned | 4 | 3 | 4 | 5.33 |
 | G18 | features | Mem0-style preference-consolidation (update existing memory on correction vs duplicate) | Competitive delta vs Mem0; future | 3 | 4 | 2 | 1.5 |
+| G19 | reliability | Recall hook misses morphological matches — FTS has no stemming, so prompt "timing out" doesn't match stored "timeout" | `tests/test_recall_hook.py::test_relevant_prompt_injects_context` fails on clean HEAD (pre-existing); recall injects nothing | 4 | 3 | 4 | 5.33 |
+
+## Shipped
+| id | dimension | shipped | note |
+|---|---|---|---|
+| G01 | features | iter-1 | OKF serializer `scripts/okf.py`; verifiers okf-roundtrip + okf-conformance. Cooldown until iter-7. |
 
 ## Parked
 _(none yet)_
