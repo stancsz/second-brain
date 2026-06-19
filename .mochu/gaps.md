@@ -20,7 +20,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned; G09 migration story must be back-compat | 4 | 3 | 4 | 5.33 |
 | G18 | features | Mem0-style preference-consolidation (update existing memory on correction vs duplicate) | Mem0 OpenCode v0.2.0 (2026-06-17) ships gated auto-dream in production — concrete reference impl | 3 | 3 | 3 | 3.0 |
 | G19 | reliability | ~~Recall hook misses morphological matches~~ RESOLVED as output-encoding crash (cp1252 swallowed emoji print → empty stdout) | hook now reconfigures stdout to UTF-8; recall block reaches the model under cp1252; filler still silent | 4 | 3 | 4 | 5.33 |
-| G20 | trust | OKF spec conformance: verify `okf_version` lives in bundle-root `index.md` frontmatter, NOT as a separate file (per OKF v0.1 SPEC.md refetched iter-8) | Possible G03 regression — our G03 description names `okf_version` as if it's a file; spec says it's an `index.md` frontmatter key | 3 | 1 | 4 | 12.0 |
+| G20 | trust | OKF spec conformance: verify `okf_version` lives in bundle-root `index.md` frontmatter, NOT as a separate file (per OKF v0.1 SPEC.md refetched iter-8) | SHIPPED iter-10 | 3 | 1 | 4 | 12.0 |
 | G21 | docs | README.zh.md parity for G14 — translate OKF v0.1, Concept (概念), git-sync, psychological-memory sections to Chinese | README.zh.md still says "笔记(Drawer)", "5 万条笔记" and does not mention OKF/sync/psych | 3 | 2 | 4 | 6.0 |
 
 ## Shipped
@@ -34,6 +34,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G06 | reliability | iter-6 | Conflict parking `sync.py` (conflicts()); verifier conflict. Cooldown until iter-12. |
 | G19 | reliability | iter-7 | Recall hook UTF-8 stdout (cp1252 crash); verifier recall-encoding. Cooldown until iter-13. |
 | G14 | docs | iter-9 | README/SKILL OKF terminology, multi-device sync, psychological-memory foundation documented; verifier docs-okf (hardened iter-7 with cp1252 fix iter-8). Cooldown until iter-15. |
+| G20 | trust | iter-10 | OKF v0.1 spec-shape verifier (okf_version placement, subdir-index frontmatter absence, every concept has type, no concept has okf_version); code was already spec-compliant. Cooldown until iter-16. |
 
 ## Parked
 _(none yet)_
