@@ -19,7 +19,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G16 | performance | Incremental (mtime-based) rebuild for large Bundles | Full walk only; risk at scale | 2 | 3 | 3 | 2.0 |
 | G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned | 4 | 3 | 4 | 5.33 |
 | G18 | features | Mem0-style preference-consolidation (update existing memory on correction vs duplicate) | Competitive delta vs Mem0; future | 3 | 4 | 2 | 1.5 |
-| G19 | reliability | Recall hook misses morphological matches — FTS has no stemming, so prompt "timing out" doesn't match stored "timeout" | `tests/test_recall_hook.py::test_relevant_prompt_injects_context` fails on clean HEAD (pre-existing); recall injects nothing | 4 | 3 | 4 | 5.33 |
+| G19 | reliability | ~~Recall hook misses morphological matches~~ RESOLVED as output-encoding crash (cp1252 swallowed emoji print → empty stdout) | hook now reconfigures stdout to UTF-8; recall block reaches the model under cp1252; filler still silent | 4 | 3 | 4 | 5.33 |
 
 ## Shipped
 | id | dimension | shipped | note |
@@ -30,6 +30,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G05 | features | iter-4 | Git sync spine `scripts/sync.py`; verifier git-sync. Multi-device portable. Cooldown until iter-10. |
 | G07 | reliability | iter-5 | Tombstone deletes + incremental export `bundle.py`/`sync.py`; verifier tombstone. Cooldown until iter-11. |
 | G06 | reliability | iter-6 | Conflict parking `sync.py` (conflicts()); verifier conflict. Cooldown until iter-12. |
+| G19 | reliability | iter-7 | Recall hook UTF-8 stdout (cp1252 crash); verifier recall-encoding. Cooldown until iter-13. |
 
 ## Parked
 _(none yet)_
