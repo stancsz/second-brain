@@ -1,19 +1,20 @@
 ---
 name: second-brain
-description: A local, file-based knowledge graph ("second brain" / 长脑子 / 脑子不够用了) for capturing, searching, linking, and recalling notes across conversations. Use this skill whenever the user wants to SAVE something for later ("remember this", "save this article/snippet", "note that...", "记一下", "存一下", "脑子记不住"), RECALL their own knowledge ("what do I know about X?", "what have I written on Y?", "catch me up on project Z", "我之前写过 X 吗"), find GAPS ("what am I missing on X?", "我还缺什么"), or manage a personal notes/wiki/zettelkasten. Trigger it even when the user doesn't say "second brain" — any time they treat you as if you should retain or retrieve their personal notes, reach for this skill instead of answering from training data. The store is a single SQLite file with full-text search and a wikilink-driven relation graph.
+description: A local, file-based knowledge graph ("second brain" / 长脑子 / 脑子不够用了) for capturing, searching, linking, and recalling notes across conversations. OKF v0.1-native, multi-device sync via git, psychological memory foundation. Use this skill whenever the user wants to SAVE something for later ("remember this", "save this article/snippet", "note that...", "记一下", "存一下", "脑子记不住"), RECALL their own knowledge ("what do I know about X?", "what have I written on Y?", "catch me up on project Z", "我之前写过 X 吗"), find GAPS ("what am I missing on X?", "我还缺什么"), or manage a personal notes/wiki/zettelkasten. Trigger it even when the user doesn't say "second brain" — any time they treat you as if you should retain or retrieve their personal notes, reach for this skill instead of answering from training data. The store is an OKF-conformant Bundle with a SQLite cache (fully rebuildable).
 ---
 
 # SecondBrain
 
-A personal knowledge graph stored in one SQLite file at `~/.secondbrain/brain.db`.
-Notes are **drawers**. They carry **tags** (flat), an optional **collection**
-(a string, e.g. "Work"), and **relations** (typed edges). Relations are derived
-automatically from `[[wikilinks]]` in content, and can also be added manually.
+A personal knowledge graph persisted as an **OKF v0.1-conformant Bundle** (directory of markdown files) with a SQLite cache at `~/.secondbrain/brain.db`.
+
+**Concepts** (notes) carry **tags** (flat), an optional **collection** (a string, e.g. "Work"), and **relations** (typed edges). Relations are derived automatically from `[[wikilinks]]` in content, and can also be added manually. Concepts also carry optional **psychological fields**: **subjects** (who/what the memory is about), **temporal validity** (when it's true), **affect** (emotional valence/arousal), and **supersession** (later facts replace older ones).
+
+**Multi-device sync** works via git: export the Bundle, commit, pull/rebase/push, then rebuild on another device. Concurrent edits on two devices park as `*.conflict.md` instead of clobbering.
 
 Everything runs through `scripts/brain_cli.py` (stdlib Python, no install step).
-The first run creates the database and schema automatically.
+The first run creates both the Bundle directory and database automatically.
 
-## When you answer from this skill, you answer from the user's notes — not your training data. Cite drawer IDs.
+## When you answer from this skill, you answer from the user's notes — not your training data. Cite Concept IDs.
 
 ---
 
@@ -25,9 +26,9 @@ user didn't give — infer sensible ones and state your assumption in one line.
 | The user... | Do this |
 |---|---|
 | Pastes text/article/code and says "save this" / "remember this" | Synthesize a title, pull 2–5 tags, pick a collection if obvious, run `add`. Don't interrogate them first. |
-| Asks "what do I know about X?" / "have I written about Y?" | `search X`, read results, synthesize an answer **citing drawer IDs**. |
+| Asks "what do I know about X?" / "have I written about Y?" | `search X`, read results, synthesize an answer **citing Concept IDs**. |
 | Asks a factual question with no personal framing | Answer normally. Do **not** force a search if they're not asking about their own notes. |
-| "Catch me up on project Z" / "prep me on Z" | `list --collection Z --sort updated`, read top drawers, give a short brief, surface the most-linked ones. |
+| "Catch me up on project Z" / "prep me on Z" | `list --collection Z --sort updated`, read top Concepts, give a short brief, surface the most-linked ones. |
 | "What am I missing on X?" | `search X`, list what exists, compare against their outline/goal, name the gaps. |
 | "What haven't I touched in a while?" | `list --sort updated` (oldest end) or query the DB directly by `updated_at`. |
 | "What decisions have I saved?" / "What are my preferences?" | `list --collection Decisions` / `list --collection Preferences` / `list --collection Facts` / `list --collection Knowledge` — the four taxonomy collections for distilled know-how. |
@@ -75,10 +76,10 @@ command for structured output you can parse; omit it for human-readable text.
 - `related <id> [--source manual|wikilink|all]`  /  `traverse <id> [--depth N]`
 - `export [--collection C] [--format json|markdown|csv] [--output PATH]`
 - `import <path> [--merge|--replace]`  /  `stats [--collection C]`
-- `summary [--cold-days 180]` — size, drawer counts (alive / cold / soft-deleted), pending links, recommendation
+- `summary [--cold-days 180]` — size, Concept counts (alive / cold / soft-deleted), pending links, recommendation
 - `distill --output <path> [--tag T] [--collection C] [--query Q] [--since D] [--until D] [--include-related-depth N] [--activate]` — write a filtered working brain to a new file; old brain stays put unless `--activate`
-- `archive --output <path> [--older-than-days N] [--before D] [--tag T] [--collection C] [--dry-run]` — move cold/filtered drawers to a new brain.db, hard-delete from working
-- `merge-brain --from <path>` — bring another brain's drawers into the working brain (idempotent)
+- `archive --output <path> [--older-than-days N] [--before D] [--tag T] [--collection C] [--dry-run]` — move cold/filtered Concepts to a new brain.db, hard-delete from working
+- `merge-brain --from <path>` — bring another brain's Concepts into the working brain (idempotent)
 - `add "<title>" --content-file <path> [--collection C] [--tags a,b]` — `add` with content read from a file (avoids shell escaping for long content)
 
 Slash command (not a CLI subcommand, lives in `commands/history.md`):
@@ -89,14 +90,14 @@ Slash command (not a CLI subcommand, lives in `commands/history.md`):
 ## Behavior contracts (handle these the same way every time)
 
 **Capture without friction.** When saving, never block on a missing collection or
-tag. A drawer with no collection is fully searchable and linkable. Capture now,
+tag. A Concept with no collection is fully searchable and linkable. Capture now,
 let the user organize later. The `(none)` collection count in `stats` is their backlog.
 
 **Wikilinks build the graph for free.** Any `[[Another Title]]` in content becomes a
 `references` relation on save. When you write a note that relates to an existing one,
 weave the link into the prose: `...similar to [[RAG Overview]]...`. Resolution is
 case-insensitive, exact-match-first. Targets that don't exist yet become *pending* and
-auto-link the moment a matching drawer is created — so forward references are safe.
+auto-link the moment a matching Concept is created — so forward references are safe.
 
 **Suggest links, don't silently inject them (single add).** After a normal `add`,
 run a `search` against the new content and *offer* `[[wikilink]]` edits the user can
@@ -107,20 +108,20 @@ accept. Exception: **Bulk capture** mode — when the user pastes a batch to ing
 (drop a word, try a synonym) and retry once before telling the user it isn't in their
 notes. Never claim something is absent after a single narrow query.
 
-**Ambiguous `show` → list, don't guess.** If a title matches multiple drawers, the CLI
+**Ambiguous `show` → list, don't guess.** If a title matches multiple Concepts, the CLI
 returns all matches with short IDs. Surface them and ask which, using the 8-char id.
 
-**Soft delete is the default and is reversible.** `delete` sets a timestamp; the drawer
+**Soft delete is the default and is reversible.** `delete` sets a timestamp; the Concept
 vanishes from every query but `restore <id>` brings it back with its links intact. Only
 use `--hard` (permanent, cascades to relations) when the user explicitly wants it gone forever.
 
-**Citing.** When you answer a knowledge question from the brain, reference the drawers you
-used by their short id, e.g. "(per drawer `be452d8b`)", so the user can `show` them.
+**Citing.** When you answer a knowledge question from the brain, reference the Concepts you
+used by their short id, e.g. "(per Concept `be452d8b`)", so the user can `show` them.
 
 **Proactive brain health.** Don't wait for the user to complain about size — at the start
 of a long session, or when the user asks "how big is my brain / 脑子够用吗", run `summary`
 and surface any recommendation. If `summary` returns a recommendation, *propose* the
-action in one line ("You have 32K cold drawers — want me to archive them?") — never run
+action in one line ("You have 32K cold Concepts — want me to archive them?") — never run
 `archive` or `distill --activate` unprompted, since both are destructive (or at least
 rearrange the canonical file).
 
@@ -139,11 +140,11 @@ confirm.
 | `Facts` | Persistent personal/project context | "Stack: Next.js + FastAPI", "Deadline: Q3 2026", "Team lead: Alice" |
 | `Knowledge` | Reusable how-to, patterns, lessons | "How to deploy to staging", "Django N+1 pattern to avoid" |
 
-Notes saved mid-session for a specific topic (a paper abstract, a design doc) may use a topic collection (`Research`, `Work`, etc.) instead — the four above are specifically for auto-distilled conversational know-how. The `(none)` bucket in `stats` is a backlog of uncategorized drawers; any drawer is still fully searchable without a collection.
+Notes saved mid-session for a specific topic (a paper abstract, a design doc) may use a topic collection (`Research`, `Work`, etc.) instead — the four above are specifically for auto-distilled conversational know-how. The `(none)` bucket in `stats` is a backlog of uncategorized Concepts; any Concept is still fully searchable without a collection.
 
 **Logs are logs; the brain is clean.** Raw conversation transcripts are **not**
 stored in the brain. They are archived as plain files under `~/.secondbrain/logs/`
-by the capture hook. `brain.db` holds only *distilled* knowledge — titled drawers
+by the capture hook. `brain.db` holds only *distilled* knowledge — titled Concepts
 the user/agent deliberately saved. So `search` never returns a wall of raw JSONL,
 and proactive recall surfaces real notes, not transcripts. To browse what was said
 in a past session, use `/history` (it reads the log files). To recall *knowledge*,
@@ -162,7 +163,7 @@ while raw logs are preserved separately. Three channels, all quiet by default:
    `Stop` — Claude Code surfaces every block as a "Stop hook error" banner in
    the UI, which made the skill look broken. At session end, the agent
    reviews the log path the hook printed and saves the conversation's
-   durable bits as clean drawers (taxonomy: `Decisions` / `Preferences` /
+   durable bits as clean Concepts (taxonomy: `Decisions` / `Preferences` /
    `Facts` / `Knowledge`). If nothing is durable, say "Nope." and stop.
    The hook still writes the log; the agent owns the distill step.
 3. **Heuristic channel (during the chat).** You should *also* save durable bits
@@ -183,7 +184,7 @@ while raw logs are preserved separately. Three channels, all quiet by default:
    matching sessions at session end.
 
 **Proactive recall (Mode 2).** If the `UserPromptSubmit` hook
-(`hooks/recall_memories.py`) is installed, relevant drawers from the clean brain
+(`hooks/recall_memories.py`) is installed, relevant Concepts from the clean brain
 are injected into your context automatically before you answer — you'll see a
 "🧠 second-brain — possibly relevant notes" block. Use those notes when they fit
 and cite the 8-char id; ignore them when they don't. This is the automatic
@@ -191,7 +192,7 @@ counterpart to the on-demand recall in the intent table (you can always run
 `search` yourself too).
 
 **Archive is destructive; merge-brain is its undo.** `archive` *hard-deletes* from the
-working brain after copying the cold drawers out. There is no `--soft` flag. If the user
+working brain after copying the cold Concepts out. There is no `--soft` flag. If the user
 might want them back, suggest running with `--dry-run` first to see what would be moved,
 or remind them that `merge-brain --from <archive>` is the round-trip.
 
@@ -202,8 +203,8 @@ output destroy the user's trust in the skill. Rules:
 - **Recall:** never narrate that the hook ran. If a recalled note actually informs your
   answer, weave it in and cite the 8-char id. If it doesn't, ignore it silently.
 - **Heuristic save mid-chat:** exactly one short line. `Saved abc12345.` Nothing more.
-- **Bulk capture:** one summary line total. `Saved N drawers.`
-- **Distill at session end:** one summary line. `Distilled N drawers (2 Decisions, 1 Knowledge).` No per-`add` echo.
+- **Bulk capture:** one summary line total. `Saved N Concepts.`
+- **Distill at session end:** one summary line. `Distilled N Concepts (2 Decisions, 1 Knowledge).` No per-`add` echo.
 - **No-op is one word, not silent.** "Nope." or "Skip." Never 2 words, never an explanation. The user said "no matter what not supposed to be verbose" — treat no-op output as zero.
 
 **Default: raise skill issues via `gh`.** If anything in the skill breaks — a
@@ -234,7 +235,7 @@ fires once per install.
 **Save from conversation**
 > User pastes a paper abstract: "save this"
 Run: `add "Attention Is All You Need" "<abstract>" --collection Research --tags ml,transformers,paper --source <url>`
-Then: search "attention" to find related drawers, offer to add `[[wikilinks]]`.
+Then: search "attention" to find related Concepts, offer to add `[[wikilinks]]`.
 
 **Recall**
 > "What do I know about RAG?"
@@ -242,7 +243,7 @@ Run: `search "RAG"` → read the hits → "You have three notes on this. The cor
 
 **Prep**
 > "Catch me up on the Braid project."
-Run: `list --collection Braid --sort updated` → read top 5 → 3-paragraph brief, lead with the most-linked drawer (`related`/`traverse` to find it).
+Run: `list --collection Braid --sort updated` → read top 5 → 3-paragraph brief, lead with the most-linked Concept (`related`/`traverse` to find it).
 
 ---
 
@@ -259,8 +260,8 @@ copied, atomicity guarantees, the `--activate` swap, and the connection to
 agent context compression.
 
 Key guarantees the implementation enforces and you can rely on:
-- Soft-deleted drawers never appear in `search`, `list`, `related`, or `traverse`.
+- Soft-deleted Concepts never appear in `search`, `list`, `related`, or `traverse`.
 - Hard delete cascades to relations/tags/pending links and cleans the FTS index.
-- Editing a drawer's content re-derives its wikilink relations but **never** touches
+- Editing a Concept's content re-derives its wikilink relations but **never** touches
   manual relations.
 - The store is plain SQLite — `sqlite3 ~/.secondbrain/brain.db` works for ad-hoc queries.

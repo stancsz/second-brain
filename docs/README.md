@@ -12,6 +12,7 @@ Read in order:
 4. [04-psychological-memory.md](./04-psychological-memory.md) — temporal validity, subjects, affect, memory kinds (the differentiator).
 5. [05-backends-and-encryption.md](./05-backends-and-encryption.md) — backup adapters and selective encryption.
 6. [06-build-plan.md](./06-build-plan.md) — phased, testable build sequence + risks.
+7. [07-pmf-and-gap-analysis.md](./07-pmf-and-gap-analysis.md) — competitive landscape, PMF, and detailed gap analysis.
 
 **North star:** *follow OKF as closely as possible.* Where our model and OKF disagree on a name,
 OKF wins. Our extensions live in namespaced `sb_*` frontmatter keys, which OKF explicitly blesses.

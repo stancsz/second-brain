@@ -1,13 +1,13 @@
 # second-brain
 
-> A local, file-based knowledge graph for AI agents. One SQLite file, zero dependencies, full data ownership.
+> A local, file-based knowledge graph for AI agents. One SQLite file, zero dependencies, full data ownership. **OKF v0.1-native.** Multi-device sync via git. Psychological memory foundation (subjects, temporal validity, affect).
 >
 > [中文文档](./README.zh.md) · [Architecture](./references/architecture.md) · [SKILL.md](./SKILL.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-green.svg)](#installation)
-[![Schema: v2.1](https://img.shields.io/badge/schema-v2.1-blueviolet.svg)](./scripts/schema.sql)
+[![OKF: v0.1](https://img.shields.io/badge/OKF-v0.1-brightgreen.svg)](./docs/02-okf-and-terminology.md)
 
 ---
 
@@ -19,11 +19,11 @@
 
 ## What it is
 
-`second-brain` is a personal knowledge store designed to be read and written by AI agents as easily as by humans. Notes are stored in a single SQLite file at `~/.secondbrain/brain.db` using the Python standard library only — no `pip install`, no `docker compose up`, no cloud account.
+`second-brain` is a personal knowledge store designed to be read and written by AI agents as easily as by humans. Concepts (notes) are persisted as an **OKF v0.1-conformant Bundle** — a directory of markdown files with YAML frontmatter — backed by a SQLite cache at `~/.secondbrain/brain.db`. Everything uses the Python standard library only — no `pip install`, no `docker compose up`, no cloud account.
 
-Notes are linked together through `[[wikilinks]]` in their content, building a knowledge graph automatically as you write. The store supports full-text search, typed relations, tags, collections, soft delete, and round-trip export to Markdown.
+Concepts are linked together through `[[wikilinks]]` in their content, building a knowledge graph automatically as you write. The store supports full-text search, typed relations, tags, collections, soft delete, and round-trip export/rebuild to Markdown. **Multi-device sync** works via a git remote (the Bundle is your source of truth; SQLite is a disposable cache). Psychological memory is native: Concepts carry optional **subjects** (who or what the memory is about), **temporal validity** (when it's true), **affect** (emotional valence/arousal), and **supersession** (later facts replace earlier ones).
 
-The `SKILL.md` in this repository makes `second-brain` a drop-in [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills): any agent that loads the skill can save, search, and link notes in your brain during a conversation.
+The `SKILL.md` in this repository makes `second-brain` a drop-in [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills): any agent that loads the skill can save, search, and link Concepts in your brain during a conversation.
 
 ## Why
 
@@ -38,19 +38,23 @@ Most "AI memory" products store your data in a third-party cloud, behind an API,
 
 ## Features
 
-- **Flat knowledge graph.** Drawers (notes) carry tags, an optional collection, and typed relations. No folder hierarchy to maintain.
+- **OKF Bundle as source of truth.** Concepts (notes) are persisted as markdown files organized in an OKF v0.1-conformant Bundle. The SQLite database is a fully rebuildable cache — delete it anytime and `rebuild` from the files losslessly.
+- **Flat knowledge graph.** Concepts carry tags, an optional collection, and typed relations. No folder hierarchy to maintain.
 - **`[[wikilinks]]`.** Cross-references are written in the body and resolved at write time — relations cannot drift from the text.
-- **Pending links.** Forward references to not-yet-existing notes are stored in an indexed table and promoted to real relations when the target is created.
-- **Full-text search.** SQLite FTS5 with soft-delete awareness. Returns sub-100ms results on 50K drawers.
-- **Soft delete by default.** `delete` is reversible; `delete --hard` is permanent.
+- **Pending links.** Forward references to not-yet-existing Concepts are stored in an indexed table and promoted to real relations when the target is created.
+- **Full-text search.** SQLite FTS5 with soft-delete awareness. Returns sub-100ms results on 50K Concepts.
+- **Soft delete by default.** `delete` is reversible; `delete --hard` is permanent. Tombstones propagate over git sync.
 - **Typed relations.** `references`, `contradicts`, `expands`, `related` with optional strength.
-- **Graph traversal.** Recursive CTE-based traverse from any drawer.
-- **Import / export.** Round-trip to JSON, Markdown (Obsidian-compatible), and CSV.
-- **Distill & archive.** Goal-based filter (`distill --query "X"`) writes a focused working brain without touching the old one (pass `--activate` to swap). Cold-storage (`archive --older-than-days 180`) moves untouched drawers out and VACUUMs the working brain. `merge-brain --from <archive>` brings them back.
-- **Logs stay logs; the brain stays clean.** A `Stop` hook archives the full raw transcript of every session to plain files under `~/.secondbrain/logs/` — never into the brain. The brain (`brain.db`) holds only *distilled* know-how: titled drawers the agent extracts at session end (decisions, preferences, facts, reusable knowledge), plus anything you explicitly save. Searching your knowledge never returns a wall of raw chat.
-- **Proactive recall.** A `UserPromptSubmit` hook searches the clean brain against each prompt and injects relevant notes into the agent's context *before* it answers — so you don't have to ask "what do I know about X".
+- **Graph traversal.** Recursive CTE-based traverse from any Concept.
+- **Multi-device sync via git.** Export your brain as a Bundle, commit to git, pull/rebase/push, then rebuild on another device. Git is the only sync backbone; all other clouds are one-way mirrors. Works fully offline.
+- **Conflict parking.** Concurrent edits to the same Concept on two devices park as `*.conflict.md` instead of clobbering. Human resolves the conflict once; both edits preserved until then.
+- **Import / export.** Round-trip to JSON, Markdown (Obsidian-compatible, OKF-native), and CSV.
+- **Distill & archive.** Goal-based filter (`distill --query "X"`) writes a focused working brain without touching the old one (pass `--activate` to swap). Cold-storage (`archive --older-than-days 180`) moves untouched Concepts out and VACUUMs the working brain. `merge-brain --from <archive>` brings them back.
+- **Psychological memory foundation.** Concepts carry optional **subjects** (who/what the memory is about; enables persona sub-graphs), **temporal validity** (`sb_valid_from`/`to`; enables historical queries), **affect** (emotional valence/arousal/emotion type), and **supersession** (newer facts replace older ones). These fields ride in OKF frontmatter and enable emotion-aware recall and perspective-aware memory synthesis.
+- **Logs stay logs; the brain stays clean.** A `Stop` hook archives the full raw transcript of every session to plain files under `~/.secondbrain/logs/` — never into the brain. The brain (`brain.db`) holds only *distilled* know-how: titled Concepts the agent extracts at session end (decisions, preferences, facts, reusable knowledge), plus anything you explicitly save. Searching your knowledge never returns a wall of raw chat.
+- **Proactive recall.** A `UserPromptSubmit` hook searches the clean brain against each prompt and injects relevant Concepts into the agent's context *before* it answers — so you don't have to ask "what do I know about X".
 - **`/history` slash command.** Browse past conversations in your brain, then dive into the chosen one.
-- **Phase 2 (planned).** Optional vector search via `sqlite-vec` and an MCP server interface.
+- **Phase 2 (planned).** Optional vector search via `sqlite-vec`, MCP server interface, and selective encryption for private/psychological Concepts.
 
 ## Installation
 
@@ -96,10 +100,10 @@ python3 scripts/brain_cli.py summary
 # Distill a focused working brain (old brain stays as a point-in-time backup)
 python3 scripts/brain_cli.py distill --query "RAG" --output focused.db --activate
 
-# Cold-store untouched drawers (180d+) and shrink the working brain
+# Cold-store untouched Concepts (180d+) and shrink the working brain
 python3 scripts/brain_cli.py archive --output archive-2026.db --older-than-days 180
 
-# Bring archived drawers back
+# Bring archived Concepts back
 python3 scripts/brain_cli.py merge-brain --from archive-2026.db
 
 # Browse past conversation logs (also available as the /history slash command)
@@ -199,7 +203,7 @@ The design splits cleanly in two: **logs stay logs, the brain stays clean.**
   the brain.
 - **Know-how → the brain.** At session end the hook asks the agent to extract
   the durable bits (decisions, preferences, facts, reusable knowledge) into
-  clean, titled drawers. The brain accumulates distilled knowledge, not bulk
+  clean, titled Concepts. The brain accumulates distilled knowledge, not bulk
   chat — so `search` and proactive recall stay sharp.
 
 The easiest way to wire it up is `install.sh`, which merges the hooks into your
@@ -318,7 +322,7 @@ See [`references/architecture.md`](./references/architecture.md) for:
 
 ## Backup strategy
 
-The recommended setup is to put `~/.secondbrain/brain.db` under version control in a private GitHub repository. The database is a single file; even at 50K drawers it is typically under 100 MB, which is fine for `git push`.
+The recommended setup is to put `~/.secondbrain/brain.db` under version control in a private GitHub repository. The database is a single file; even at 50K Concepts it is typically under 100 MB, which is fine for `git push`.
 
 For continuous backup, pair with [litestream](https://litestream.io/) to replicate the WAL stream to S3, Backblaze, or any S3-compatible object store. Schema migrations and disaster recovery are standard SQLite operations.
 

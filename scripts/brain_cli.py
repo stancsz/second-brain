@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """CLI for SecondBrain. Each subcommand maps to one /brain-* command.
 
 Usage:
@@ -142,23 +142,23 @@ def main():
                 content = Path(args.content_file).read_text(encoding="utf-8")
             else:
                 if args.content is None:
-                    sys.exit("❌ add needs either a content argument or --content-file")
+                    sys.exit("âŒ add needs either a content argument or --content-file")
                 content = args.content
             tags = [x.strip() for x in (args.tags or "").split(",") if x.strip()]
             dr = b.add(args.title, content, args.collection, tags, args.source or [])
             links = b.related(dr["id"], source="wikilink")
-            msg = f"✅ Saved \"{dr['title']}\"  {dr['id'][:8]}"
+            msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
             if links:
-                msg += "\n   → linked: " + ", ".join(x["title"] for x in links)
+                msg += "\n   â†’ linked: " + ", ".join(x["title"] for x in links)
             pend = [pl for pl in b.con.execute(
                 "SELECT target_title FROM pending_links WHERE from_id=?", (dr["id"],))]
             if pend:
-                msg += "\n   ⏳ pending: " + ", ".join(x[0] for x in pend)
+                msg += "\n   â³ pending: " + ", ".join(x[0] for x in pend)
             out(dr, msg)
 
         elif args.cmd == "search":
             res = b.search(args.query, args.collection, args.tag, args.limit)
-            human = f"📚 {len(res)} results\n\n" + "\n\n".join(
+            human = f"ðŸ“š {len(res)} results\n\n" + "\n\n".join(
                 _fmt_drawer_line(i + 1, d) for i, d in enumerate(res)) if res \
                 else "No results. Try broader terms or check the collection/tag filter."
             out(res, human)
@@ -169,7 +169,7 @@ def main():
             if not matches:
                 out(None, f"No live drawer matches '{args.ident}'.")
             elif len(matches) > 1:
-                human = f"⚠️ {len(matches)} drawers match '{args.ident}':\n\n" + "\n\n".join(
+                human = f"âš ï¸ {len(matches)} drawers match '{args.ident}':\n\n" + "\n\n".join(
                     _fmt_drawer_line(i + 1, d) for i, d in enumerate(matches)) + \
                     "\n\nRe-run with the 8-char id to pick one."
                 out(matches, human)
@@ -177,11 +177,11 @@ def main():
                 dd = matches[0]
                 rels = b.related(dd["id"])
                 human = (f"# {dd['title']}\n"
-                         f"Collection: {dd['collection'] or '(none)'}   Tags: {', '.join(dd['tags']) or '—'}\n"
-                         f"Sources: {', '.join(dd['sources']) or '—'}\n"
+                         f"Collection: {dd['collection'] or '(none)'}   Tags: {', '.join(dd['tags']) or 'â€”'}\n"
+                         f"Sources: {', '.join(dd['sources']) or 'â€”'}\n"
                          f"Updated: {dd['updated_at']}   ID: {dd['id']}\n\n{dd['content']}\n")
                 if rels:
-                    human += "\n🔗 Relations:\n" + "\n".join(
+                    human += "\nðŸ”— Relations:\n" + "\n".join(
                         f"   [{r['dir']}|{r['relation_type']}|{r['source']}] {r['title']} ({r['id'][:8]})"
                         for r in rels)
                 out(dd, human)
@@ -189,16 +189,16 @@ def main():
         elif args.cmd == "update":
             tags = [x.strip() for x in args.tags.split(",")] if args.tags is not None else None
             dr = b.update(args.id, args.title, args.content, tags, args.collection)
-            out(dr, f"✅ Updated {args.id[:8]}" if dr else f"No live drawer {args.id[:8]}")
+            out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live drawer {args.id[:8]}")
 
         elif args.cmd == "delete":
             ok = b.delete(args.id, args.hard)
             kind = "hard-deleted (permanent)" if args.hard else "soft-deleted (recover with restore)"
-            out({"ok": ok}, f"{'🗑️ ' + kind if ok else 'Nothing to delete'}: {args.id[:8]}")
+            out({"ok": ok}, f"{'ðŸ—‘ï¸ ' + kind if ok else 'Nothing to delete'}: {args.id[:8]}")
 
         elif args.cmd == "restore":
             ok = b.restore(args.id)
-            out({"ok": ok}, f"♻️ Restored {args.id[:8]}" if ok else f"Nothing to restore: {args.id[:8]}")
+            out({"ok": ok}, f"â™»ï¸ Restored {args.id[:8]}" if ok else f"Nothing to restore: {args.id[:8]}")
 
         elif args.cmd == "list":
             res = b.list(args.collection, args.tag, args.limit, args.offset, args.sort)
@@ -207,21 +207,21 @@ def main():
 
         elif args.cmd == "collections":
             cs = b.collections()
-            human = f"📂 Collections ({len(cs)})\n\n" + "\n".join(
-                f"{c['name']:<14} — {c['n']} drawers" for c in cs)
+            human = f"ðŸ“‚ Collections ({len(cs)})\n\n" + "\n".join(
+                f"{c['name']:<14} â€” {c['n']} drawers" for c in cs)
             out(cs, human)
 
         elif args.cmd == "tags":
             ts = b.tags(args.sort, args.limit)
-            human = "\n".join(f"{t['name']:<20} ×{t['n']}" for t in ts) or "No tags."
+            human = "\n".join(f"{t['name']:<20} Ã—{t['n']}" for t in ts) or "No tags."
             out(ts, human)
 
         elif args.cmd == "relate":
             try:
                 rid = b.relate(args.from_id, args.to_id, args.type, args.strength)
-                out({"id": rid}, f"🔗 {args.from_id[:8]} —{args.type}→ {args.to_id[:8]}")
+                out({"id": rid}, f"ðŸ”— {args.from_id[:8]} â€”{args.type}â†’ {args.to_id[:8]}")
             except ValueError as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
 
         elif args.cmd == "related":
             rs = b.related(args.id, args.limit, args.source)
@@ -240,27 +240,27 @@ def main():
                 try:
                     res = b.export_vault(args.output, args.collection)
                 except Exception as ex:
-                    out({"error": str(ex)}, f"❌ {ex}")
+                    out({"error": str(ex)}, f"âŒ {ex}")
                     sys.exit(1)
-                print(f"💾 Exported {res['drawers']} notes → {res['path']}/")
+                print(f"ðŸ’¾ Exported {res['drawers']} notes â†’ {res['path']}/")
             else:
                 data = b.export(args.collection, args.format)
                 if args.output:
                     Path(args.output).write_text(data, encoding="utf-8")
-                    print(f"💾 Exported to {args.output}")
+                    print(f"ðŸ’¾ Exported to {args.output}")
                 else:
                     print(data)
 
         elif args.cmd == "import":
             mode = "replace" if args.replace else "merge"
             res = b.import_(args.path, mode)
-            out(res, f"📥 Imported: {res['added']} added, {res['skipped']} skipped ({mode})")
+            out(res, f"ðŸ“¥ Imported: {res['added']} added, {res['skipped']} skipped ({mode})")
 
         elif args.cmd == "stats":
             s = b.stats(args.collection)
-            top_tags = ", ".join(t["name"] + "×" + str(t["n"]) for t in s["tags"]) or "none"
+            top_tags = ", ".join(t["name"] + "Ã—" + str(t["n"]) for t in s["tags"]) or "none"
             colls = ", ".join(c["name"] + "(" + str(c["n"]) + ")" for c in s["collections"])
-            human = (f"📊 SecondBrain\n\n"
+            human = (f"ðŸ“Š SecondBrain\n\n"
                      f"Drawers: {s['drawers']} ({s['uncollected']} uncollected, "
                      f"{s['soft_deleted']} soft-deleted)\n"
                      f"Relations: {sum(s['relations'].values())} "
@@ -278,7 +278,7 @@ def main():
             if s["recommendation"] == "archive":
                 rec_lines = [
                     "",
-                    "💡 Recommendation: archive",
+                    "ðŸ’¡ Recommendation: archive",
                     f"   You have {d['cold']} cold drawers (untouched "
                     f"{d['cold_threshold_days']}+ days, {d['cold']*100//max(d['alive'],1)}% of total).",
                     "   Run: brain archive --output ~/.secondbrain/archive-$(date +%F).db",
@@ -286,18 +286,18 @@ def main():
             elif s["recommendation"] == "archive-then-distill":
                 rec_lines = [
                     "",
-                    "💡 Recommendation: archive then distill",
+                    "ðŸ’¡ Recommendation: archive then distill",
                     f"   Brain is {s['size_human']} with {d['cold']} cold drawers. "
                     "Archive first, then distill a focused working copy.",
                 ]
             human = (
-                f"🧠 SecondBrain summary\n\n"
+                f"ðŸ§  SecondBrain summary\n\n"
                 f"  Path:     {s['db_path']}\n"
                 f"  Size:     {s['size_human']}\n"
                 f"  Drawers:  {d['alive']:,} alive   {d['cold']:,} cold ({d['cold_threshold_days']}d+)   "
                 f"{d['soft_deleted']:,} soft-deleted\n"
                 f"  Relations: {sum(rels.values()):,} total   "
-                f"({', '.join(f'{k}×{v}' for k, v in rels.items()) or 'none'})\n"
+                f"({', '.join(f'{k}Ã—{v}' for k, v in rels.items()) or 'none'})\n"
                 f"  Pending:  {s['pending_links']:,} unresolved wikilinks"
             ) + "\n".join(rec_lines)
             out(s, human)
@@ -310,21 +310,21 @@ def main():
                                 since=args.since, until=args.until,
                                 include_related_depth=args.include_related_depth)
             except (ValueError, FileExistsError) as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
             if res["drawers"] == 0:
-                out(res, f"⚠ No drawers matched. Nothing written to {res['path']}.")
+                out(res, f"âš  No drawers matched. Nothing written to {res['path']}.")
                 sys.exit(0)
 
             if args.activate:
                 working = b.db_path.resolve()
                 new_path = Path(args.output).resolve()
                 if new_path == working:
-                    sys.exit("❌ --output is the same as the working brain; refusing to swap.")
+                    sys.exit("âŒ --output is the same as the working brain; refusing to swap.")
                 if new_path.parent != working.parent:
                     target = working.parent / new_path.name
                     if target.exists():
-                        sys.exit(f"❌ {target} already exists; pick a different --output.")
+                        sys.exit(f"âŒ {target} already exists; pick a different --output.")
                     os.replace(new_path, target)
                     new_path = target
 
@@ -334,11 +334,11 @@ def main():
                 os.replace(working, backup)
                 os.replace(new_path, working)
                 human = (
-                    f"✨ Distilled {res['drawers']:,} drawers → {working}\n"
+                    f"âœ¨ Distilled {res['drawers']:,} drawers â†’ {working}\n"
                     f"   tags:        {res['tags']:,}\n"
                     f"   relations:   {res['relations']:,}\n"
                     f"   pending:     {res['pending_links']:,}\n"
-                    f"   old brain →  {backup}\n"
+                    f"   old brain â†’  {backup}\n"
                     f"   new working: {working}\n"
                     f"   old brain is now a point-in-time backup; restore with `cp {backup} {working}`"
                 )
@@ -346,7 +346,7 @@ def main():
                 sys.exit(0)
 
             human = (
-                f"✨ Distilled {res['drawers']:,} drawers → {args.output}\n"
+                f"âœ¨ Distilled {res['drawers']:,} drawers â†’ {args.output}\n"
                 f"   tags:      {res['tags']:,}\n"
                 f"   relations: {res['relations']:,}\n"
                 f"   pending:   {res['pending_links']:,}\n"
@@ -361,20 +361,20 @@ def main():
                                 before_date=args.before, tags=tags or None,
                                 collection=args.collection, dry_run=args.dry_run)
             except (ValueError, FileExistsError) as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
             if args.dry_run:
                 human = (
-                    f"🔍 Dry run — no files written\n"
+                    f"ðŸ” Dry run â€” no files written\n"
                     f"   would archive:  {res['would_archive']:,} drawers (criterion: {res['criterion']})\n"
                     f"   would remain:   {res['would_remain']:,} drawers\n"
                     f"   target file:    {res['path']}"
                 )
             elif res["archived"] == 0:
-                human = f"⚠ No drawers matched ({res['criterion']}). Nothing archived."
+                human = f"âš  No drawers matched ({res['criterion']}). Nothing archived."
             else:
                 human = (
-                    f"🗄️  Archived {res['archived']:,} drawers → {res['path']}\n"
+                    f"ðŸ—„ï¸  Archived {res['archived']:,} drawers â†’ {res['path']}\n"
                     f"   criterion:   {res['criterion']}\n"
                     f"   relations:   {res['archived_relations']:,} archived with their drawers\n"
                     f"   remaining:   {res['remaining']:,} drawers in working brain\n"
@@ -387,10 +387,10 @@ def main():
             try:
                 res = b.merge_brain(args.source)
             except FileNotFoundError as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
             human = (
-                f"🔀 Merged from {res['source_path']}\n"
+                f"ðŸ”€ Merged from {res['source_path']}\n"
                 f"   drawers added:        {res['drawers_added']:,}  "
                 f"(skipped: {res['drawers_skipped']:,} already present)\n"
                 f"   tag links added:      {res['tag_links_added']:,}\n"
@@ -406,3 +406,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
