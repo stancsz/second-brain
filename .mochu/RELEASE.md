@@ -23,7 +23,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 
 ## Trust
 - [ ] R13 `private`/`psych`/`Episode`/`RelationshipModel` Concepts are ciphertext on the remote; plaintext notes stay diffable — verifier: selective-encryption (G13)
-- [ ] R14 No secrets ever committed; sync.toml secrets via env/keyring — verifier: secret-scan (ship_gate)
+- [x] R14 No secrets ever committed; sync.toml secrets via env/keyring — verifier: secret-scan (ship_gate) — DONE iter-11 (ship_gate's diff scan + G22's git-history + config-shape scan together cover both halves)
 
 ## Docs
 - [x] R15 SKILL.md + README describe the OKF model and every shipped capability; a stranger can install and sync — verifier: docs-executable (G14) — DONE iter-9

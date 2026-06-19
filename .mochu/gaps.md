@@ -35,6 +35,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G19 | reliability | iter-7 | Recall hook UTF-8 stdout (cp1252 crash); verifier recall-encoding. Cooldown until iter-13. |
 | G14 | docs | iter-9 | README/SKILL OKF terminology, multi-device sync, psychological-memory foundation documented; verifier docs-okf (hardened iter-7 with cp1252 fix iter-8). Cooldown until iter-15. |
 | G20 | trust | iter-10 | OKF v0.1 spec-shape verifier (okf_version placement, subdir-index frontmatter absence, every concept has type, no concept has okf_version); code was already spec-compliant. Cooldown until iter-16. |
+| G22 | trust | iter-11 | R14 secret-history + config-shape secret scan (15,804 history lines + tracked *.toml/*.ini/*.yaml/*.yml/*.env; 0 leaks); 0 config files in this repo, the sync.toml half of R14 is locked in for when the config exists. Cooldown until iter-17. |
 
 ## Parked
 _(none yet)_
