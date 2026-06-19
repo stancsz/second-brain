@@ -45,7 +45,7 @@ def _short(s, n=120):
     return s[:n] + ("..." if len(s) > n else "")
 
 
-def _fmt_drawer_line(i, d):
+def _fmt_concept_line(i, d):
     tags = f" [{', '.join(d['tags'])}]" if d["tags"] else ""
     coll = f" [{d['collection']}]" if d["collection"] else ""
     return (f"{i}. {d['title']}{coll}{tags}\n"
@@ -99,15 +99,15 @@ def main():
 
     sm = sub.add_parser("summary")
     sm.add_argument("--cold-days", type=int, default=180,
-                    help="threshold (days) for a drawer to count as 'cold'")
+                    help="threshold (days) for a concept to count as 'cold'")
 
     di = sub.add_parser("distill")
     di.add_argument("--output", required=True, help="path for the new distilled brain.db")
-    di.add_argument("--tag", action="append", help="drawer must have this tag (repeatable)")
-    di.add_argument("--collection", help="drawer must be in this collection")
-    di.add_argument("--query", help="FTS query the drawer must match")
-    di.add_argument("--since", help="drawer updated_at >= this ISO date")
-    di.add_argument("--until", help="drawer updated_at <= this ISO date")
+    di.add_argument("--tag", action="append", help="concept must have this tag (repeatable)")
+    di.add_argument("--collection", help="concept must be in this collection")
+    di.add_argument("--query", help="FTS query the concept must match")
+    di.add_argument("--since", help="concept updated_at >= this ISO date")
+    di.add_argument("--until", help="concept updated_at <= this ISO date")
     di.add_argument("--include-related-depth", type=int, default=0,
                     help="expand matches by N hops via the relations graph")
     di.add_argument("--activate", action="store_true",
@@ -117,15 +117,15 @@ def main():
     ar = sub.add_parser("archive")
     ar.add_argument("--output", required=True, help="path for the archive brain.db")
     ar.add_argument("--older-than-days", type=int, default=180,
-                    help="archive drawers untouched for at least N days (default 180)")
-    ar.add_argument("--before", help="archive drawers with updated_at <= this ISO date")
-    ar.add_argument("--tag", action="append", help="archive drawers with this tag (repeatable)")
-    ar.add_argument("--collection", help="archive drawers in this collection")
+                    help="archive concepts untouched for at least N days (default 180)")
+    ar.add_argument("--before", help="archive concepts with updated_at <= this ISO date")
+    ar.add_argument("--tag", action="append", help="archive concepts with this tag (repeatable)")
+    ar.add_argument("--collection", help="archive concepts in this collection")
     ar.add_argument("--dry-run", action="store_true", help="show counts without writing")
 
     mb = sub.add_parser("merge-brain")
     mb.add_argument("--from", dest="source", required=True,
-                    help="path to a brain.db whose drawers will be merged into the working brain")
+                    help="path to a brain.db whose concepts will be merged into the working brain")
 
     args = p.parse_args()
     b = SecondBrain(args.db) if args.db else SecondBrain()
@@ -159,7 +159,7 @@ def main():
         elif args.cmd == "search":
             res = b.search(args.query, args.collection, args.tag, args.limit)
             human = f"ðŸ“š {len(res)} results\n\n" + "\n\n".join(
-                _fmt_drawer_line(i + 1, d) for i, d in enumerate(res)) if res \
+                _fmt_concept_line(i + 1, d) for i, d in enumerate(res)) if res \
                 else "No results. Try broader terms or check the collection/tag filter."
             out(res, human)
 
@@ -167,10 +167,10 @@ def main():
             matches = [b.get(args.ident)] if b.get(args.ident) else b.get_by_title(args.ident)
             matches = [m for m in matches if m]
             if not matches:
-                out(None, f"No live drawer matches '{args.ident}'.")
+                out(None, f"No live concept matches '{args.ident}'.")
             elif len(matches) > 1:
-                human = f"âš ï¸ {len(matches)} drawers match '{args.ident}':\n\n" + "\n\n".join(
-                    _fmt_drawer_line(i + 1, d) for i, d in enumerate(matches)) + \
+                human = f"âš ï¸ {len(matches)} concepts match '{args.ident}':\n\n" + "\n\n".join(
+                    _fmt_concept_line(i + 1, d) for i, d in enumerate(matches)) + \
                     "\n\nRe-run with the 8-char id to pick one."
                 out(matches, human)
             else:
@@ -189,7 +189,7 @@ def main():
         elif args.cmd == "update":
             tags = [x.strip() for x in args.tags.split(",")] if args.tags is not None else None
             dr = b.update(args.id, args.title, args.content, tags, args.collection)
-            out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live drawer {args.id[:8]}")
+            out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 
         elif args.cmd == "delete":
             ok = b.delete(args.id, args.hard)
@@ -202,13 +202,13 @@ def main():
 
         elif args.cmd == "list":
             res = b.list(args.collection, args.tag, args.limit, args.offset, args.sort)
-            human = "\n\n".join(_fmt_drawer_line(i + 1, d) for i, d in enumerate(res)) or "Empty."
+            human = "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res)) or "Empty."
             out(res, human)
 
         elif args.cmd == "collections":
             cs = b.collections()
             human = f"ðŸ“‚ Collections ({len(cs)})\n\n" + "\n".join(
-                f"{c['name']:<14} â€” {c['n']} drawers" for c in cs)
+                f"{c['name']:<14} â€” {c['n']} concepts" for c in cs)
             out(cs, human)
 
         elif args.cmd == "tags":
@@ -242,7 +242,7 @@ def main():
                 except Exception as ex:
                     out({"error": str(ex)}, f"âŒ {ex}")
                     sys.exit(1)
-                print(f"ðŸ’¾ Exported {res['drawers']} notes â†’ {res['path']}/")
+                print(f"ðŸ’¾ Exported {res['concepts']} notes â†’ {res['path']}/")
             else:
                 data = b.export(args.collection, args.format)
                 if args.output:
@@ -261,7 +261,7 @@ def main():
             top_tags = ", ".join(t["name"] + "Ã—" + str(t["n"]) for t in s["tags"]) or "none"
             colls = ", ".join(c["name"] + "(" + str(c["n"]) + ")" for c in s["collections"])
             human = (f"ðŸ“Š SecondBrain\n\n"
-                     f"Drawers: {s['drawers']} ({s['uncollected']} uncollected, "
+                     f"Concepts: {s['concepts']} ({s['uncollected']} uncollected, "
                      f"{s['soft_deleted']} soft-deleted)\n"
                      f"Relations: {sum(s['relations'].values())} "
                      f"({', '.join(str(k) + ': ' + str(v) for k, v in s['relations'].items()) or 'none'})\n"
@@ -272,14 +272,14 @@ def main():
 
         elif args.cmd == "summary":
             s = b.summary(cold_threshold_days=args.cold_days)
-            d = s["drawers"]
+            d = s["concepts"]
             rels = s["relations"]
             rec_lines = []
             if s["recommendation"] == "archive":
                 rec_lines = [
                     "",
                     "ðŸ’¡ Recommendation: archive",
-                    f"   You have {d['cold']} cold drawers (untouched "
+                    f"   You have {d['cold']} cold concepts (untouched "
                     f"{d['cold_threshold_days']}+ days, {d['cold']*100//max(d['alive'],1)}% of total).",
                     "   Run: brain archive --output ~/.secondbrain/archive-$(date +%F).db",
                 ]
@@ -287,14 +287,14 @@ def main():
                 rec_lines = [
                     "",
                     "ðŸ’¡ Recommendation: archive then distill",
-                    f"   Brain is {s['size_human']} with {d['cold']} cold drawers. "
+                    f"   Brain is {s['size_human']} with {d['cold']} cold concepts. "
                     "Archive first, then distill a focused working copy.",
                 ]
             human = (
                 f"ðŸ§  SecondBrain summary\n\n"
                 f"  Path:     {s['db_path']}\n"
                 f"  Size:     {s['size_human']}\n"
-                f"  Drawers:  {d['alive']:,} alive   {d['cold']:,} cold ({d['cold_threshold_days']}d+)   "
+                f"  Concepts:  {d['alive']:,} alive   {d['cold']:,} cold ({d['cold_threshold_days']}d+)   "
                 f"{d['soft_deleted']:,} soft-deleted\n"
                 f"  Relations: {sum(rels.values()):,} total   "
                 f"({', '.join(f'{k}Ã—{v}' for k, v in rels.items()) or 'none'})\n"
@@ -312,8 +312,8 @@ def main():
             except (ValueError, FileExistsError) as ex:
                 out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
-            if res["drawers"] == 0:
-                out(res, f"âš  No drawers matched. Nothing written to {res['path']}.")
+            if res["concepts"] == 0:
+                out(res, f"âš  No concepts matched. Nothing written to {res['path']}.")
                 sys.exit(0)
 
             if args.activate:
@@ -334,7 +334,7 @@ def main():
                 os.replace(working, backup)
                 os.replace(new_path, working)
                 human = (
-                    f"âœ¨ Distilled {res['drawers']:,} drawers â†’ {working}\n"
+                    f"âœ¨ Distilled {res['concepts']:,} concepts â†’ {working}\n"
                     f"   tags:        {res['tags']:,}\n"
                     f"   relations:   {res['relations']:,}\n"
                     f"   pending:     {res['pending_links']:,}\n"
@@ -346,7 +346,7 @@ def main():
                 sys.exit(0)
 
             human = (
-                f"âœ¨ Distilled {res['drawers']:,} drawers â†’ {args.output}\n"
+                f"âœ¨ Distilled {res['concepts']:,} concepts â†’ {args.output}\n"
                 f"   tags:      {res['tags']:,}\n"
                 f"   relations: {res['relations']:,}\n"
                 f"   pending:   {res['pending_links']:,}\n"
@@ -366,20 +366,20 @@ def main():
             if args.dry_run:
                 human = (
                     f"ðŸ” Dry run â€” no files written\n"
-                    f"   would archive:  {res['would_archive']:,} drawers (criterion: {res['criterion']})\n"
-                    f"   would remain:   {res['would_remain']:,} drawers\n"
+                    f"   would archive:  {res['would_archive']:,} concepts (criterion: {res['criterion']})\n"
+                    f"   would remain:   {res['would_remain']:,} concepts\n"
                     f"   target file:    {res['path']}"
                 )
             elif res["archived"] == 0:
-                human = f"âš  No drawers matched ({res['criterion']}). Nothing archived."
+                human = f"âš  No concepts matched ({res['criterion']}). Nothing archived."
             else:
                 human = (
-                    f"ðŸ—„ï¸  Archived {res['archived']:,} drawers â†’ {res['path']}\n"
+                    f"ðŸ—„ï¸  Archived {res['archived']:,} concepts â†’ {res['path']}\n"
                     f"   criterion:   {res['criterion']}\n"
-                    f"   relations:   {res['archived_relations']:,} archived with their drawers\n"
-                    f"   remaining:   {res['remaining']:,} drawers in working brain\n"
+                    f"   relations:   {res['archived_relations']:,} archived with their concepts\n"
+                    f"   remaining:   {res['remaining']:,} concepts in working brain\n"
                     f"   new size:    {res['size_remaining_human']}\n"
-                    f"\n   to bring a drawer back: brain merge-brain --from {res['path']}"
+                    f"\n   to bring a concept back: brain merge-brain --from {res['path']}"
                 )
             out(res, human)
 
@@ -391,12 +391,12 @@ def main():
                 sys.exit(1)
             human = (
                 f"ðŸ”€ Merged from {res['source_path']}\n"
-                f"   drawers added:        {res['drawers_added']:,}  "
-                f"(skipped: {res['drawers_skipped']:,} already present)\n"
+                f"   concepts added:        {res['concepts_added']:,}  "
+                f"(skipped: {res['concepts_skipped']:,} already present)\n"
                 f"   tag links added:      {res['tag_links_added']:,}\n"
                 f"   relations added:      {res['relations_added']:,}\n"
                 f"   pending links added:  {res['pending_links_added']:,}\n"
-                f"\n   wikilinks re-derived for new drawers; cross-refs auto-resolved."
+                f"\n   wikilinks re-derived for new concepts; cross-refs auto-resolved."
             )
             out(res, human)
 

@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""SecondBrain v2.1 — local knowledge graph for AI agents.
+"""SecondBrain v3.0 — local knowledge graph for AI agents (OKF v0.1).
 
 One file, stdlib only (sqlite3 + json + uuid + re). No external deps for Phase 1.
 Every /brain-* command maps to a method here. The CLI wrapper is brain_cli.py.
 
+v3.0 renames the underlying table from `drawers` to `concepts` to align
+with OKF v0.1 canonical naming. A v2.1 brain.db is auto-migrated on
+open via SecondBrain._migrate_v21_to_concepts(): the table is renamed
+in place, the FTS5 index is rebuilt, and the triggers are replaced.
+The CLI (brain_cli.py) + bundle (bundle.py) + sync (sync.py) +
+hooks (capture_conversation.py, recall_memories.py) all use the new
+"concept" naming in this release. The remaining R4 surface is
+docs/references/commands/CHANGELOG; tracked in M3.
+
 Design decisions worth knowing:
-- Soft-deleted drawers are excluded from EVERY read path. There is one helper,
+- Soft-deleted concepts are excluded from EVERY read path. There is one helper,
   _alive(), and all queries go through views/filters that use it.
 - Wikilinks resolve at WRITE time and the resolved target id is frozen into the
-  relation row. Editing some *other* drawer later never silently re-points an
+  relation row. Editing some *other* concept later never silently re-points an
   existing link. (This fixes the v2 "most recently updated wins, forever" drift.)
-- Unresolved [[links]] go to the pending_links table. When a drawer is created or
+- Unresolved [[links]] go to the pending_links table. When a concept is created or
   retitled, we resolve any pending links pointing at its title in one indexed query.
 """
 
@@ -39,32 +48,107 @@ class SecondBrain:
         self._ensure_schema()
 
     def _ensure_schema(self):
+        self._migrate_v21_to_concepts()
         schema = (Path(__file__).parent / "schema.sql").read_text()
         self.con.executescript(schema)
         self.con.commit()
 
+    def _migrate_v21_to_concepts(self):
+        """One-shot v2.1 -> v3.0 schema migration.
+
+        v2.1 had `drawers` as the table name; v3.0 (OKF v0.1) renames it
+        to `concepts`. SQLite's ALTER TABLE RENAME updates indexes
+        automatically and the FTS5 content= reference, but the FTS5
+        virtual table itself, the FTS5 internal shadow tables, and the
+        triggers all keep their old names + stale SQL bodies pointing
+        at the old FTS5 table. We have to:
+
+          1. ALTER TABLE drawers RENAME TO concepts
+          2. DROP the old FTS5 virtual table (drawers_fts)
+          3. DROP the old triggers (drawers_ai/ad/au — SQLite's
+             ALTER TABLE RENAME updated their `ON` clause but their
+             body still references `drawers_fts`)
+          4. CREATE the new FTS5 + new triggers (these match what
+             schema.sql will do, but we do it here so we can rebuild
+             the index from the renamed base table in step 5)
+          5. Rebuild the FTS5 index from the renamed base table
+
+        After this function returns, schema.sql is run by the caller.
+        All its CREATE statements use IF NOT EXISTS, so they are
+        no-ops on a DB that the migration has just upgraded.
+
+        Idempotent: if `concepts` already exists, do nothing. If neither
+        `concepts` nor `drawers` exists, do nothing (fresh DB; the
+        schema.sql will create everything)."""
+        has_concepts = self.con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='concepts'"
+        ).fetchone() is not None
+        has_drawers = self.con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='drawers'"
+        ).fetchone() is not None
+        if has_concepts or not has_drawers:
+            return  # already migrated, or fresh DB
+        # 1. rename base table
+        self.con.execute("ALTER TABLE drawers RENAME TO concepts")
+        # 2. drop old FTS5 virtual table (also drops its shadow tables)
+        self.con.execute("DROP TABLE IF EXISTS drawers_fts")
+        # 3. drop old triggers — SQLite's ALTER TABLE updated the
+        # `ON` clause (now `ON concepts`) but left the body referring
+        # to the dropped `drawers_fts` table, so the triggers would
+        # fail at next insert/update/delete.
+        self.con.executescript(
+            "DROP TRIGGER IF EXISTS drawers_ai;\n"
+            "DROP TRIGGER IF EXISTS drawers_ad;\n"
+            "DROP TRIGGER IF EXISTS drawers_au;\n"
+        )
+        # 4. create the v3.0 FTS5 + triggers
+        self.con.executescript(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts USING fts5(\n"
+            "    title, content,\n"
+            "    content=concepts,\n"
+            "    content_rowid=rowid\n"
+            ");\n"
+            "CREATE TRIGGER IF NOT EXISTS concepts_ai AFTER INSERT ON concepts BEGIN\n"
+            "  INSERT INTO concepts_fts(rowid, title, content)\n"
+            "  VALUES (new.rowid, new.title, new.content);\n"
+            "END;\n"
+            "CREATE TRIGGER IF NOT EXISTS concepts_ad AFTER DELETE ON concepts BEGIN\n"
+            "  INSERT INTO concepts_fts(concepts_fts, rowid, title, content)\n"
+            "  VALUES ('delete', old.rowid, old.title, old.content);\n"
+            "END;\n"
+            "CREATE TRIGGER IF NOT EXISTS concepts_au AFTER UPDATE ON concepts BEGIN\n"
+            "  INSERT INTO concepts_fts(concepts_fts, rowid, title, content)\n"
+            "  VALUES ('delete', old.rowid, old.title, old.content);\n"
+            "  INSERT INTO concepts_fts(rowid, title, content)\n"
+            "  VALUES (new.rowid, new.title, new.content);\n"
+            "END;\n"
+        )
+        # 5. rebuild FTS5 from the renamed base table
+        self.con.execute("INSERT INTO concepts_fts(concepts_fts) VALUES('rebuild')")
+        self.con.commit()
+
     # -- internal helpers ---------------------------------------------------
 
-    def _row_to_drawer(self, row) -> dict:
+    def _row_to_concept(self, row) -> dict:
         d = dict(row)
         d["sources"] = json.loads(d.get("sources") or "[]")
         d["metadata"] = json.loads(d.get("metadata") or "{}")
         d["tags"] = self._tags_for(d["id"])
         return d
 
-    def _tags_for(self, drawer_id: str) -> list:
+    def _tags_for(self, concept_id: str) -> list:
         rows = self.con.execute(
-            "SELECT t.name FROM tags t JOIN drawer_tags dt ON dt.tag_id = t.id "
-            "WHERE dt.drawer_id = ? ORDER BY t.name",
-            (drawer_id,),
+            "SELECT t.name FROM tags t JOIN concept_tags dt ON dt.tag_id = t.id "
+            "WHERE dt.concept_id = ? ORDER BY t.name",
+            (concept_id,),
         ).fetchall()
         return [r["name"] for r in rows]
 
     def _resolve_title(self, title: str) -> str | None:
-        """Resolve a [[title]] to a drawer id. Exact (case-insensitive) match,
+        """Resolve a [[title]] to a concept id. Exact (case-insensitive) match,
         most-recently-updated on ambiguity. Returns None if no live match."""
         row = self.con.execute(
-            "SELECT id FROM drawers WHERE title = ? COLLATE NOCASE "
+            "SELECT id FROM concepts WHERE title = ? COLLATE NOCASE "
             "AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
             (title.strip(),),
         ).fetchone()
@@ -79,26 +163,26 @@ class SecondBrain:
         self.con.execute("INSERT INTO tags (id, name) VALUES (?, ?)", (tid, name))
         return tid
 
-    def _set_tags(self, drawer_id: str, tags: list):
-        self.con.execute("DELETE FROM drawer_tags WHERE drawer_id = ?", (drawer_id,))
+    def _set_tags(self, concept_id: str, tags: list):
+        self.con.execute("DELETE FROM concept_tags WHERE concept_id = ?", (concept_id,))
         for name in tags or []:
             if not name.strip():
                 continue
             tid = self._upsert_tag(name)
             self.con.execute(
-                "INSERT OR IGNORE INTO drawer_tags (drawer_id, tag_id) VALUES (?, ?)",
-                (drawer_id, tid),
+                "INSERT OR IGNORE INTO concept_tags (concept_id, tag_id) VALUES (?, ?)",
+                (concept_id, tid),
             )
 
-    def _sync_wikilinks(self, drawer_id: str, content: str):
-        """Re-derive wikilink relations for one drawer from its content.
-        Deletes only this drawer's source='wikilink' edges, never manual ones.
+    def _sync_wikilinks(self, concept_id: str, content: str):
+        """Re-derive wikilink relations for one concept from its content.
+        Deletes only this concept's source='wikilink' edges, never manual ones.
         Unresolved targets land in pending_links."""
         self.con.execute(
             "DELETE FROM relations WHERE from_id = ? AND source = 'wikilink'",
-            (drawer_id,),
+            (concept_id,),
         )
-        self.con.execute("DELETE FROM pending_links WHERE from_id = ?", (drawer_id,))
+        self.con.execute("DELETE FROM pending_links WHERE from_id = ?", (concept_id,))
         seen = set()
         for raw in WIKILINK_RE.findall(content or ""):
             title = raw.strip()
@@ -107,35 +191,35 @@ class SecondBrain:
                 continue
             seen.add(key)
             target = self._resolve_title(title)
-            if target and target != drawer_id:
+            if target and target != concept_id:
                 self.con.execute(
                     "INSERT OR IGNORE INTO relations "
                     "(id, from_id, to_id, relation_type, strength, source) "
                     "VALUES (?, ?, ?, 'references', 0.5, 'wikilink')",
-                    (_uuid(), drawer_id, target),
+                    (_uuid(), concept_id, target),
                 )
             elif not target:
                 self.con.execute(
                     "INSERT OR IGNORE INTO pending_links (id, from_id, target_title) "
                     "VALUES (?, ?, ?)",
-                    (_uuid(), drawer_id, title),
+                    (_uuid(), concept_id, title),
                 )
 
-    def _resolve_pending_to(self, drawer_id: str, title: str):
-        """A drawer named `title` now exists (id=drawer_id). Convert any pending
+    def _resolve_pending_to(self, concept_id: str, title: str):
+        """A concept named `title` now exists (id=concept_id). Convert any pending
         links pointing at this title into real wikilink relations."""
         rows = self.con.execute(
             "SELECT id, from_id FROM pending_links WHERE target_title = ? COLLATE NOCASE",
             (title.strip(),),
         ).fetchall()
         for r in rows:
-            if r["from_id"] == drawer_id:
+            if r["from_id"] == concept_id:
                 continue
             self.con.execute(
                 "INSERT OR IGNORE INTO relations "
                 "(id, from_id, to_id, relation_type, strength, source) "
                 "VALUES (?, ?, ?, 'references', 0.5, 'wikilink')",
-                (_uuid(), r["from_id"], drawer_id),
+                (_uuid(), r["from_id"], concept_id),
             )
             self.con.execute("DELETE FROM pending_links WHERE id = ?", (r["id"],))
 
@@ -144,7 +228,7 @@ class SecondBrain:
     def add(self, title, content, collection=None, tags=None, sources=None):
         did = _uuid()
         self.con.execute(
-            "INSERT INTO drawers (id, title, content, collection, sources) "
+            "INSERT INTO concepts (id, title, content, collection, sources) "
             "VALUES (?, ?, ?, ?, ?)",
             (did, title, content, collection, json.dumps(sources or [])),
         )
@@ -154,24 +238,24 @@ class SecondBrain:
         self.con.commit()
         return self.get(did)
 
-    def get(self, drawer_id):
+    def get(self, concept_id):
         row = self.con.execute(
-            "SELECT * FROM drawers WHERE id = ? AND deleted_at IS NULL", (drawer_id,)
+            "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL", (concept_id,)
         ).fetchone()
-        return self._row_to_drawer(row) if row else None
+        return self._row_to_concept(row) if row else None
 
     def get_by_title(self, needle):
-        """Substring match on title, live drawers only, most recent first."""
+        """Substring match on title, live concepts only, most recent first."""
         rows = self.con.execute(
-            "SELECT * FROM drawers WHERE title LIKE ? AND deleted_at IS NULL "
+            "SELECT * FROM concepts WHERE title LIKE ? AND deleted_at IS NULL "
             "ORDER BY updated_at DESC LIMIT 10",
             (f"%{needle}%",),
         ).fetchall()
-        return [self._row_to_drawer(r) for r in rows]
+        return [self._row_to_concept(r) for r in rows]
 
-    def update(self, drawer_id, title=None, content=None, tags=None,
+    def update(self, concept_id, title=None, content=None, tags=None,
                collection=None, sources=None):
-        cur = self.get(drawer_id)
+        cur = self.get(concept_id)
         if not cur:
             return None
         new_title = title if title is not None else cur["title"]
@@ -179,54 +263,54 @@ class SecondBrain:
         new_collection = collection if collection is not None else cur["collection"]
         new_sources = sources if sources is not None else cur["sources"]
         self.con.execute(
-            "UPDATE drawers SET title=?, content=?, collection=?, sources=?, "
+            "UPDATE concepts SET title=?, content=?, collection=?, sources=?, "
             "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (new_title, new_content, new_collection, json.dumps(new_sources), drawer_id),
+            (new_title, new_content, new_collection, json.dumps(new_sources), concept_id),
         )
         if tags is not None:
-            self._set_tags(drawer_id, tags)
+            self._set_tags(concept_id, tags)
         if content is not None:
-            self._sync_wikilinks(drawer_id, new_content)
+            self._sync_wikilinks(concept_id, new_content)
         if title is not None and title != cur["title"]:
-            self._resolve_pending_to(drawer_id, new_title)
+            self._resolve_pending_to(concept_id, new_title)
         self.con.commit()
-        return self.get(drawer_id)
+        return self.get(concept_id)
 
-    def delete(self, drawer_id, hard=False):
+    def delete(self, concept_id, hard=False):
         if hard:
             # FK ON DELETE CASCADE cleans relations/tags/pending; AD trigger fixes FTS.
-            n = self.con.execute("DELETE FROM drawers WHERE id=?", (drawer_id,)).rowcount
+            n = self.con.execute("DELETE FROM concepts WHERE id=?", (concept_id,)).rowcount
         else:
             n = self.con.execute(
-                "UPDATE drawers SET deleted_at=CURRENT_TIMESTAMP "
+                "UPDATE concepts SET deleted_at=CURRENT_TIMESTAMP "
                 "WHERE id=? AND deleted_at IS NULL",
-                (drawer_id,),
+                (concept_id,),
             ).rowcount
         self.con.commit()
         return n > 0
 
-    def restore(self, drawer_id):
+    def restore(self, concept_id):
         n = self.con.execute(
-            "UPDATE drawers SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL",
-            (drawer_id,),
+            "UPDATE concepts SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL",
+            (concept_id,),
         ).rowcount
         if n:
             d = self.con.execute(
-                "SELECT title, content FROM drawers WHERE id=?", (drawer_id,)
+                "SELECT title, content FROM concepts WHERE id=?", (concept_id,)
             ).fetchone()
-            self._sync_wikilinks(drawer_id, d["content"])
-            self._resolve_pending_to(drawer_id, d["title"])
+            self._sync_wikilinks(concept_id, d["content"])
+            self._resolve_pending_to(concept_id, d["title"])
             self.con.commit()
         return n > 0
 
     # -- search & list -------------------------------------------------------
 
     def search(self, query, collection=None, tag=None, limit=10):
-        # Join FTS rowid back to drawers.rowid, then filter soft-deleted.
+        # Join FTS rowid back to concepts.rowid, then filter soft-deleted.
         sql = [
-            "SELECT d.* FROM drawers_fts f",
-            "JOIN drawers d ON d.rowid = f.rowid",
-            "WHERE drawers_fts MATCH ? AND d.deleted_at IS NULL",
+            "SELECT d.* FROM concepts_fts f",
+            "JOIN concepts d ON d.rowid = f.rowid",
+            "WHERE concepts_fts MATCH ? AND d.deleted_at IS NULL",
         ]
         params = [query]
         if collection is not None:
@@ -234,38 +318,38 @@ class SecondBrain:
             params.append(collection)
         if tag is not None:
             sql.append(
-                "AND d.id IN (SELECT dt.drawer_id FROM drawer_tags dt "
+                "AND d.id IN (SELECT dt.concept_id FROM concept_tags dt "
                 "JOIN tags t ON t.id = dt.tag_id WHERE t.name = ?)"
             )
             params.append(tag)
         sql.append("ORDER BY rank LIMIT ?")
         params.append(limit)
         rows = self.con.execute(" ".join(sql), params).fetchall()
-        return [self._row_to_drawer(r) for r in rows]
+        return [self._row_to_concept(r) for r in rows]
 
     def list(self, collection=None, tag=None, limit=20, offset=0, sort="updated"):
         order = {"updated": "updated_at DESC", "created": "created_at DESC",
                  "title": "title COLLATE NOCASE ASC"}.get(sort, "updated_at DESC")
-        sql = ["SELECT d.* FROM drawers d WHERE d.deleted_at IS NULL"]
+        sql = ["SELECT d.* FROM concepts d WHERE d.deleted_at IS NULL"]
         params = []
         if collection is not None:
             sql.append("AND d.collection = ?")
             params.append(collection)
         if tag is not None:
             sql.append(
-                "AND d.id IN (SELECT dt.drawer_id FROM drawer_tags dt "
+                "AND d.id IN (SELECT dt.concept_id FROM concept_tags dt "
                 "JOIN tags t ON t.id = dt.tag_id WHERE t.name = ?)"
             )
             params.append(tag)
         sql.append(f"ORDER BY {order} LIMIT ? OFFSET ?")
         params += [limit, offset]
         rows = self.con.execute(" ".join(sql), params).fetchall()
-        return [self._row_to_drawer(r) for r in rows]
+        return [self._row_to_concept(r) for r in rows]
 
     def collections(self):
         rows = self.con.execute(
             "SELECT COALESCE(collection, '(none)') AS name, COUNT(*) AS n "
-            "FROM drawers WHERE deleted_at IS NULL GROUP BY collection "
+            "FROM concepts WHERE deleted_at IS NULL GROUP BY collection "
             "ORDER BY (collection IS NULL), n DESC"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -273,9 +357,9 @@ class SecondBrain:
     def tags(self, sort="usage", limit=None):
         order = "n DESC, t.name" if sort == "usage" else "t.name COLLATE NOCASE"
         sql = (
-            "SELECT t.name, t.color, COUNT(dt.drawer_id) AS n FROM tags t "
-            "LEFT JOIN drawer_tags dt ON dt.tag_id = t.id "
-            "LEFT JOIN drawers d ON d.id = dt.drawer_id AND d.deleted_at IS NULL "
+            "SELECT t.name, t.color, COUNT(dt.concept_id) AS n FROM tags t "
+            "LEFT JOIN concept_tags dt ON dt.tag_id = t.id "
+            "LEFT JOIN concepts d ON d.id = dt.concept_id AND d.deleted_at IS NULL "
             f"GROUP BY t.id ORDER BY {order}"
         )
         if limit:
@@ -288,7 +372,7 @@ class SecondBrain:
         if relation_type not in VALID_REL_TYPES:
             raise ValueError(f"relation_type must be one of {sorted(VALID_REL_TYPES)}")
         if not self.get(from_id) or not self.get(to_id):
-            raise ValueError("both drawers must exist and be live")
+            raise ValueError("both concepts must exist and be live")
         rid = _uuid()
         self.con.execute(
             "INSERT OR IGNORE INTO relations "
@@ -299,24 +383,24 @@ class SecondBrain:
         self.con.commit()
         return rid
 
-    def related(self, drawer_id, limit=20, source="all"):
+    def related(self, concept_id, limit=20, source="all"):
         src_filter = "" if source == "all" else "AND r.source = :src"
-        # Both directions; exclude edges touching soft-deleted drawers.
+        # Both directions; exclude edges touching soft-deleted concepts.
         rows = self.con.execute(
             f"""
             SELECT r.relation_type, r.strength, r.source, d.id, d.title, d.collection,
                    CASE WHEN r.from_id = :id THEN 'out' ELSE 'in' END AS dir
             FROM relations r
-            JOIN drawers d ON d.id = CASE WHEN r.from_id = :id THEN r.to_id ELSE r.from_id END
+            JOIN concepts d ON d.id = CASE WHEN r.from_id = :id THEN r.to_id ELSE r.from_id END
             WHERE (r.from_id = :id OR r.to_id = :id)
               AND d.deleted_at IS NULL {src_filter}
             ORDER BY r.strength DESC LIMIT :lim
             """,
-            {"id": drawer_id, "src": source, "lim": limit},
+            {"id": concept_id, "src": source, "lim": limit},
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def traverse(self, drawer_id, depth=2, limit=20):
+    def traverse(self, concept_id, depth=2, limit=20):
         rows = self.con.execute(
             """
             WITH RECURSIVE walk(id, hop) AS (
@@ -328,11 +412,11 @@ class SecondBrain:
                 WHERE w.hop < :depth
             )
             SELECT DISTINCT d.id, d.title, d.collection, MIN(w.hop) AS hop
-            FROM walk w JOIN drawers d ON d.id = w.id
+            FROM walk w JOIN concepts d ON d.id = w.id
             WHERE d.deleted_at IS NULL AND w.id != :id
             GROUP BY d.id ORDER BY hop, d.title LIMIT :lim
             """,
-            {"id": drawer_id, "depth": depth, "lim": limit},
+            {"id": concept_id, "depth": depth, "lim": limit},
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -345,20 +429,20 @@ class SecondBrain:
             where += " AND collection = ?"
             params.append(collection)
         total = self.con.execute(
-            f"SELECT COUNT(*) c FROM drawers {where}", params
+            f"SELECT COUNT(*) c FROM concepts {where}", params
         ).fetchone()["c"]
         uncolld = self.con.execute(
-            "SELECT COUNT(*) c FROM drawers WHERE deleted_at IS NULL AND collection IS NULL"
+            "SELECT COUNT(*) c FROM concepts WHERE deleted_at IS NULL AND collection IS NULL"
         ).fetchone()["c"]
         softdel = self.con.execute(
-            "SELECT COUNT(*) c FROM drawers WHERE deleted_at IS NOT NULL"
+            "SELECT COUNT(*) c FROM concepts WHERE deleted_at IS NOT NULL"
         ).fetchone()["c"]
         rels = self.con.execute(
             "SELECT source, COUNT(*) c FROM relations GROUP BY source"
         ).fetchall()
         pending = self.con.execute("SELECT COUNT(*) c FROM pending_links").fetchone()["c"]
         return {
-            "drawers": total,
+            "concepts": total,
             "uncollected": uncolld,
             "soft_deleted": softdel,
             "relations": {r["source"]: r["c"] for r in rels},
@@ -404,8 +488,8 @@ class SecondBrain:
         safe = safe.strip('. ')
         return safe[:200] or "untitled"
 
-    def _drawer_to_md(self, d: dict) -> str:
-        """Render one drawer as a Markdown document with YAML frontmatter."""
+    def _concept_to_md(self, d: dict) -> str:
+        """Render one concept as a Markdown document with YAML frontmatter."""
         fm = self._yaml_frontmatter({
             "id": d["id"],
             "title": d["title"],
@@ -420,46 +504,46 @@ class SecondBrain:
     # -- export / import -----------------------------------------------------
 
     def export(self, collection=None, fmt="json"):
-        drawers = self.list(collection=collection, limit=10**9)
+        concepts = self.list(collection=collection, limit=10**9)
         if fmt == "json":
-            return json.dumps(drawers, indent=2, ensure_ascii=False)
+            return json.dumps(concepts, indent=2, ensure_ascii=False)
         if fmt == "markdown":
-            return "\n".join(self._drawer_to_md(d) for d in drawers)
+            return "\n".join(self._concept_to_md(d) for d in concepts)
         if fmt == "csv":
             import csv, io
             buf = io.StringIO()
             w = csv.writer(buf)
             w.writerow(["id", "title", "collection", "tags", "content"])
-            for d in drawers:
+            for d in concepts:
                 w.writerow([d["id"], d["title"], d["collection"] or "",
                             ";".join(d["tags"]), d["content"]])
             return buf.getvalue()
         raise ValueError("format must be json|markdown|csv")
 
     def export_vault(self, output_dir, collection=None) -> dict:
-        """Write one Markdown file per drawer into output_dir (Obsidian-compatible vault).
+        """Write one Markdown file per concept into output_dir (Obsidian-compatible vault).
         Filenames are derived from titles; duplicates get a short-id suffix.
-        Returns {"drawers": N, "path": str(output_dir)}."""
+        Returns {"concepts": N, "path": str(output_dir)}."""
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        drawers = self.list(collection=collection, limit=10**9)
+        concepts = self.list(collection=collection, limit=10**9)
         seen: dict = {}
         written = 0
-        for d in drawers:
+        for d in concepts:
             stem = self._safe_filename(d["title"])
             if stem in seen:
                 stem = f"{stem}_{d['id'][:8]}"
             seen[stem] = True
             (output_dir / f"{stem}.md").write_text(
-                self._drawer_to_md(d), encoding="utf-8"
+                self._concept_to_md(d), encoding="utf-8"
             )
             written += 1
-        return {"drawers": written, "path": str(output_dir)}
+        return {"concepts": written, "path": str(output_dir)}
 
     @staticmethod
     def _parse_md_note(text: str) -> "dict | None":
         """Parse a single Markdown note (YAML frontmatter + # heading + body).
-        Returns a raw drawer dict or None if the text is not a valid note."""
+        Returns a raw concept dict or None if the text is not a valid note."""
         text = text.strip()
         if not text or not text.startswith("---"):
             return None
@@ -525,20 +609,20 @@ class SecondBrain:
             "metadata": {},
         }
 
-    def _import_drawers(self, data: list, mode: str) -> dict:
-        """Core import loop: insert a list of raw drawer dicts."""
+    def _import_concepts(self, data: list, mode: str) -> dict:
+        """Core import loop: insert a list of raw concept dicts."""
         added = skipped = 0
         for d in data:
             exists = self.con.execute(
-                "SELECT 1 FROM drawers WHERE id=?", (d["id"],)
+                "SELECT 1 FROM concepts WHERE id=?", (d["id"],)
             ).fetchone()
             if exists and mode == "merge":
                 skipped += 1
                 continue
             if exists and mode == "replace":
-                self.con.execute("DELETE FROM drawers WHERE id=?", (d["id"],))
+                self.con.execute("DELETE FROM concepts WHERE id=?", (d["id"],))
             self.con.execute(
-                "INSERT INTO drawers (id, title, content, collection, sources, metadata) "
+                "INSERT INTO concepts (id, title, content, collection, sources, metadata) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (d["id"], d["title"], d["content"], d.get("collection"),
                  json.dumps(d.get("sources", [])), json.dumps(d.get("metadata", {}))),
@@ -554,12 +638,12 @@ class SecondBrain:
 
     def _import_vault(self, vault_dir: Path, mode: str) -> dict:
         """Import all .md files from a vault directory."""
-        drawers = []
+        concepts = []
         for f in sorted(vault_dir.glob("*.md")):
             d = self._parse_md_note(f.read_text(encoding="utf-8"))
             if d:
-                drawers.append(d)
-        return self._import_drawers(drawers, mode)
+                concepts.append(d)
+        return self._import_concepts(concepts, mode)
 
     def import_(self, path, mode="merge"):
         path = Path(path)
@@ -567,9 +651,9 @@ class SecondBrain:
             return self._import_vault(path, mode)
         if path.suffix.lower() in (".md", ".markdown"):
             d = self._parse_md_note(path.read_text(encoding="utf-8"))
-            return self._import_drawers([d] if d else [], mode)
+            return self._import_concepts([d] if d else [], mode)
         data = json.loads(path.read_text())
-        return self._import_drawers(data, mode)
+        return self._import_concepts(data, mode)
 
     def close(self):
         if getattr(self, "_closed", False):
@@ -602,12 +686,12 @@ class SecondBrain:
 
     def _count_alive(self) -> int:
         return self.con.execute(
-            "SELECT COUNT(*) c FROM drawers WHERE deleted_at IS NULL"
+            "SELECT COUNT(*) c FROM concepts WHERE deleted_at IS NULL"
         ).fetchone()["c"]
 
     def _build_filter(self, tags=None, collection=None, query=None,
                       since=None, until=None, alias="d"):
-        """Build a WHERE clause + params that selects drawers matching all
+        """Build a WHERE clause + params that selects concepts matching all
         the given filters. Within a category (multiple tags) it's IN/OR.
         Across categories it's AND."""
         a = alias
@@ -616,7 +700,7 @@ class SecondBrain:
         if tags:
             placeholders = ",".join("?" * len(tags))
             clauses.append(
-                f"{a}.id IN (SELECT dt.drawer_id FROM drawer_tags dt "
+                f"{a}.id IN (SELECT dt.concept_id FROM concept_tags dt "
                 f"JOIN tags t ON t.id = dt.tag_id WHERE t.name IN ({placeholders}))"
             )
             params.extend(tags)
@@ -625,7 +709,7 @@ class SecondBrain:
             params.append(collection)
         if query:
             clauses.append(
-                f"{a}.rowid IN (SELECT rowid FROM drawers_fts WHERE drawers_fts MATCH ?)"
+                f"{a}.rowid IN (SELECT rowid FROM concepts_fts WHERE concepts_fts MATCH ?)"
             )
             params.append(query)
         if since:
@@ -636,8 +720,8 @@ class SecondBrain:
             params.append(until)
         return " AND ".join(clauses), params
 
-    def _copy_subset_to(self, output_path, drawer_ids) -> dict:
-        """Copy a set of drawer_ids (and their tags/relations/pending_links)
+    def _copy_subset_to(self, output_path, concept_ids) -> dict:
+        """Copy a set of concept_ids (and their tags/relations/pending_links)
         into a fresh brain.db at output_path. Returns counts."""
         output_path = Path(output_path)
         if output_path.exists():
@@ -649,21 +733,21 @@ class SecondBrain:
         # Open fresh brain — _ensure_schema creates all tables.
         out = SecondBrain(output_path)
 
-        if not drawer_ids:
+        if not concept_ids:
             out.close()
-            return {"drawers": 0, "tags": 0, "relations": 0, "pending_links": 0,
+            return {"concepts": 0, "tags": 0, "relations": 0, "pending_links": 0,
                     "path": str(output_path)}
 
-        placeholders = ",".join("?" * len(drawer_ids))
-        ids = list(drawer_ids)
+        placeholders = ",".join("?" * len(concept_ids))
+        ids = list(concept_ids)
 
-        # Drawers (preserve original ids, timestamps, metadata)
-        drawer_rows = self.con.execute(
-            f"SELECT * FROM drawers WHERE id IN ({placeholders})", ids
+        # Concepts (preserve original ids, timestamps, metadata)
+        concept_rows = self.con.execute(
+            f"SELECT * FROM concepts WHERE id IN ({placeholders})", ids
         ).fetchall()
-        for d in drawer_rows:
+        for d in concept_rows:
             out.con.execute(
-                "INSERT INTO drawers (id, title, content, collection, sources, "
+                "INSERT INTO concepts (id, title, content, collection, sources, "
                 "created_at, updated_at, metadata) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (d["id"], d["title"], d["content"], d["collection"], d["sources"],
@@ -672,9 +756,9 @@ class SecondBrain:
 
         # Tags: only those actually used by the subset; mint new tag ids.
         tag_rows = self.con.execute(
-            f"SELECT dt.drawer_id, t.name FROM drawer_tags dt "
+            f"SELECT dt.concept_id, t.name FROM concept_tags dt "
             f"JOIN tags t ON t.id = dt.tag_id "
-            f"WHERE dt.drawer_id IN ({placeholders})", ids
+            f"WHERE dt.concept_id IN ({placeholders})", ids
         ).fetchall()
         tag_name_to_id = {}
         for tn in sorted({r["name"] for r in tag_rows}):
@@ -683,8 +767,8 @@ class SecondBrain:
             tag_name_to_id[tn] = tid
         for r in tag_rows:
             out.con.execute(
-                "INSERT INTO drawer_tags (drawer_id, tag_id) VALUES (?, ?)",
-                (r["drawer_id"], tag_name_to_id[r["name"]]),
+                "INSERT INTO concept_tags (concept_id, tag_id) VALUES (?, ?)",
+                (r["concept_id"], tag_name_to_id[r["name"]]),
             )
 
         # Relations: edges where BOTH endpoints are in the subset.
@@ -700,7 +784,7 @@ class SecondBrain:
                  r["strength"], r["source"]),
             )
 
-        # Pending links: from a drawer in the subset (target may or may not be).
+        # Pending links: from a concept in the subset (target may or may not be).
         pend_rows = self.con.execute(
             f"SELECT * FROM pending_links WHERE from_id IN ({placeholders})", ids
         ).fetchall()
@@ -714,7 +798,7 @@ class SecondBrain:
         out.con.commit()
         out.close()
         return {
-            "drawers": len(drawer_rows),
+            "concepts": len(concept_rows),
             "tags": len(tag_name_to_id),
             "relations": len(rel_rows),
             "pending_links": len(pend_rows),
@@ -722,19 +806,19 @@ class SecondBrain:
         }
 
     def summary(self, cold_threshold_days: int = 180) -> dict:
-        """Brain health snapshot: size, drawer counts (alive / cold / soft-del),
+        """Brain health snapshot: size, concept counts (alive / cold / soft-del),
         relation counts, pending links, and a one-line recommendation.
 
-        Cold = alive drawers whose updated_at is older than cold_threshold_days."""
+        Cold = alive concepts whose updated_at is older than cold_threshold_days."""
         size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         alive = self._count_alive()
         cold = self.con.execute(
-            "SELECT COUNT(*) c FROM drawers WHERE deleted_at IS NULL "
+            "SELECT COUNT(*) c FROM concepts WHERE deleted_at IS NULL "
             "AND updated_at < datetime('now', ?)",
             (f"-{int(cold_threshold_days)} days",),
         ).fetchone()["c"]
         soft = self.con.execute(
-            "SELECT COUNT(*) c FROM drawers WHERE deleted_at IS NOT NULL"
+            "SELECT COUNT(*) c FROM concepts WHERE deleted_at IS NOT NULL"
         ).fetchone()["c"]
         rels = {r["source"]: r["c"] for r in self.con.execute(
             "SELECT source, COUNT(*) c FROM relations GROUP BY source"
@@ -756,7 +840,7 @@ class SecondBrain:
             "db_path": str(self.db_path),
             "size_bytes": size_bytes,
             "size_human": self._humanize_bytes(size_bytes),
-            "drawers": {
+            "concepts": {
                 "alive": alive,
                 "cold": cold,
                 "soft_deleted": soft,
@@ -770,11 +854,11 @@ class SecondBrain:
     def distill(self, output_path, tags=None, collection=None, query=None,
                 since=None, until=None, include_related_depth: int = 0,
                 min_strength: float = 0.0) -> dict:
-        """Create a new brain.db at output_path containing only the drawers
+        """Create a new brain.db at output_path containing only the concepts
         that match the given filters. NON-DESTRUCTIVE: the working brain is
         not modified. The CLI's --activate flag handles swapping.
 
-        Filters AND across categories (a drawer must satisfy all given filters)
+        Filters AND across categories (a concept must satisfy all given filters)
         and OR within a category (any tag, any collection). Returns counts.
         """
         if not any([tags, collection, query, since, until]):
@@ -784,7 +868,7 @@ class SecondBrain:
             )
         where, params = self._build_filter(tags, collection, query, since, until)
         seed_ids = {r["id"] for r in self.con.execute(
-            f"SELECT id FROM drawers d WHERE {where}", params
+            f"SELECT id FROM concepts d WHERE {where}", params
         ).fetchall()}
 
         # Optional N-hop expansion around the seeds.
@@ -795,33 +879,33 @@ class SecondBrain:
                     seed_ids.add(row["id"])
 
         if not seed_ids:
-            return {"drawers": 0, "tags": 0, "relations": 0,
+            return {"concepts": 0, "tags": 0, "relations": 0,
                     "pending_links": 0, "path": str(Path(output_path)),
-                    "note": "no drawers matched the filter"}
+                    "note": "no concepts matched the filter"}
 
         return self._copy_subset_to(output_path, seed_ids)
 
     def archive(self, output_path, older_than_days: int = 180,
                 before_date: str = None, tags=None, collection=None,
                 dry_run: bool = False) -> dict:
-        """Move cold drawers to output_path (a new brain.db) and hard-delete
+        """Move cold concepts to output_path (a new brain.db) and hard-delete
         them from the working brain. The whole operation is atomic — if the
         copy fails, nothing is deleted.
 
         Default criterion: updated_at < (now - older_than_days).
         If before_date is given, use that instead.
-        If tags/collection are given, archive matching drawers regardless of age.
+        If tags/collection are given, archive matching concepts regardless of age.
         """
         if tags or collection or before_date is not None:
             where, params = self._build_filter(tags, collection,
                                                since=None, until=before_date)
             target_ids = {r["id"] for r in self.con.execute(
-                f"SELECT id FROM drawers d WHERE {where}", params
+                f"SELECT id FROM concepts d WHERE {where}", params
             ).fetchall()}
             criterion = "explicit filter"
         else:
             target_ids = {r["id"] for r in self.con.execute(
-                "SELECT id FROM drawers WHERE deleted_at IS NULL "
+                "SELECT id FROM concepts WHERE deleted_at IS NULL "
                 "AND updated_at < datetime('now', ?)",
                 (f"-{int(older_than_days)} days",),
             ).fetchall()}
@@ -839,9 +923,9 @@ class SecondBrain:
                 "dry_run": dry_run,
             }
         if target_ids == {r["id"] for r in self.con.execute(
-                "SELECT id FROM drawers WHERE deleted_at IS NULL").fetchall()}:
+                "SELECT id FROM concepts WHERE deleted_at IS NULL").fetchall()}:
             raise ValueError(
-                "archive would remove every alive drawer — refusing. "
+                "archive would remove every alive concept — refusing. "
                 "Pass a narrower filter or check your --older-than-days."
             )
 
@@ -860,7 +944,7 @@ class SecondBrain:
 
         placeholders = ",".join("?" * len(target_ids))
         self.con.execute(
-            f"DELETE FROM drawers WHERE id IN ({placeholders})", list(target_ids)
+            f"DELETE FROM concepts WHERE id IN ({placeholders})", list(target_ids)
         )
         self.con.commit()
         self.checkpoint()  # flush WAL so renames are clean
@@ -868,7 +952,7 @@ class SecondBrain:
 
         size_after = self.db_path.stat().st_size
         return {
-            "archived": copy_stats["drawers"],
+            "archived": copy_stats["concepts"],
             "archived_relations": copy_stats["relations"],
             "remaining": self._count_alive(),
             "criterion": criterion,
@@ -878,8 +962,8 @@ class SecondBrain:
         }
 
     def merge_brain(self, source_path) -> dict:
-        """Bring drawers from another brain.db into this one. Idempotent:
-        drawers whose id already exists are skipped (relations, tags and
+        """Bring concepts from another brain.db into this one. Idempotent:
+        concepts whose id already exists are skipped (relations, tags and
         pending_links are likewise skipped via UNIQUE constraints)."""
         source_path = Path(source_path)
         if not source_path.exists():
@@ -887,8 +971,8 @@ class SecondBrain:
         # Source is read-only; never use the same DB_PATH global.
         src = SecondBrain(source_path)
 
-        # Build id-set of already-present drawers for fast skip.
-        existing = {r["id"] for r in self.con.execute("SELECT id FROM drawers").fetchall()}
+        # Build id-set of already-present concepts for fast skip.
+        existing = {r["id"] for r in self.con.execute("SELECT id FROM concepts").fetchall()}
         existing_tag_names = {r["name"] for r in self.con.execute("SELECT name FROM tags").fetchall()}
 
         # Tags: copy any missing tag names (mint new ids).
@@ -912,43 +996,43 @@ class SecondBrain:
                     "SELECT id FROM tags WHERE name = ?", (name,)
                 ).fetchone()["id"]
 
-        # Drawers: skip those we already have.
-        src_drawer_rows = src.con.execute("SELECT * FROM drawers").fetchall()
-        added_drawers = 0
-        skipped_drawers = 0
+        # Concepts: skip those we already have.
+        src_concept_rows = src.con.execute("SELECT * FROM concepts").fetchall()
+        added_concepts = 0
+        skipped_concepts = 0
         newly_added_ids = []
-        for d in src_drawer_rows:
+        for d in src_concept_rows:
             if d["id"] in existing:
-                skipped_drawers += 1
+                skipped_concepts += 1
                 continue
             self.con.execute(
-                "INSERT INTO drawers (id, title, content, collection, sources, "
+                "INSERT INTO concepts (id, title, content, collection, sources, "
                 "created_at, updated_at, metadata) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (d["id"], d["title"], d["content"], d["collection"], d["sources"],
                  d["created_at"], d["updated_at"], d["metadata"]),
             )
             existing.add(d["id"])
-            added_drawers += 1
+            added_concepts += 1
             newly_added_ids.append(d["id"])
 
-        # Drawer_tags: re-bind source tag ids to our tag ids.
-        src_dt_rows = src.con.execute("SELECT drawer_id, tag_id FROM drawer_tags").fetchall()
+        # Concept_tags: re-bind source tag ids to our tag ids.
+        src_dt_rows = src.con.execute("SELECT concept_id, tag_id FROM concept_tags").fetchall()
         added_tags_links = 0
         for r in src_dt_rows:
-            if r["drawer_id"] not in existing:
+            if r["concept_id"] not in existing:
                 continue
             our_tag_id = src_tag_id_to_our_id.get(r["tag_id"])
             if our_tag_id is None:
                 continue
             self.con.execute(
-                "INSERT OR IGNORE INTO drawer_tags (drawer_id, tag_id) "
+                "INSERT OR IGNORE INTO concept_tags (concept_id, tag_id) "
                 "VALUES (?, ?)",
-                (r["drawer_id"], our_tag_id),
+                (r["concept_id"], our_tag_id),
             )
             added_tags_links += 1
 
-        # Relations: only those touching drawers we now have.
+        # Relations: only those touching concepts we now have.
         src_rel_rows = src.con.execute(
             "SELECT * FROM relations"
         ).fetchall()
@@ -965,7 +1049,7 @@ class SecondBrain:
             )
             added_rels += 1
 
-        # Pending links: only from drawers we now have.
+        # Pending links: only from concepts we now have.
         src_pend_rows = src.con.execute(
             "SELECT * FROM pending_links"
         ).fetchall()
@@ -980,18 +1064,18 @@ class SecondBrain:
             )
             added_pend += 1
 
-        # Re-derive wikilinks for newly added drawers so cross-refs into
+        # Re-derive wikilinks for newly added concepts so cross-refs into
         # the existing brain resolve correctly.
         for did in newly_added_ids:
             d = self.con.execute(
-                "SELECT content FROM drawers WHERE id=?", (did,)
+                "SELECT content FROM concepts WHERE id=?", (did,)
             ).fetchone()
             if d:
                 self._sync_wikilinks(did, d["content"])
         # And resolve any pending links pointing at the new titles.
         for did in newly_added_ids:
             d = self.con.execute(
-                "SELECT title FROM drawers WHERE id=?", (did,)
+                "SELECT title FROM concepts WHERE id=?", (did,)
             ).fetchone()
             if d:
                 self._resolve_pending_to(did, d["title"])
@@ -999,8 +1083,8 @@ class SecondBrain:
         self.con.commit()
         src.close()
         return {
-            "drawers_added": added_drawers,
-            "drawers_skipped": skipped_drawers,
+            "concepts_added": added_concepts,
+            "concepts_skipped": skipped_concepts,
             "tag_links_added": added_tags_links,
             "relations_added": added_rels,
             "pending_links_added": added_pend,

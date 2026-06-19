@@ -38,7 +38,7 @@ def ensure_repo(bundle_dir) -> Path:
 
 
 def _is_fresh_device(db_path, bundle_dir) -> bool:
-    """True if the db has zero drawers but the Bundle already holds concept
+    """True if the db has zero concepts but the Bundle already holds concept
     files — i.e. a fresh clone whose cache hasn't been imported yet."""
     bundle_dir = Path(bundle_dir)
     has_concepts = any(
@@ -51,7 +51,7 @@ def _is_fresh_device(db_path, bundle_dir) -> bool:
     if not Path(db_path).exists():
         return True
     b = SecondBrain(db_path)
-    n = b.con.execute("SELECT COUNT(*) c FROM drawers").fetchone()["c"]
+    n = b.con.execute("SELECT COUNT(*) c FROM concepts").fetchone()["c"]
     b.close()
     return n == 0
 
@@ -154,7 +154,7 @@ def sync(db_path, bundle_dir, remote=None, message="secondbrain sync") -> dict:
         if "origin" not in have:
             _git(["remote", "add", "origin", str(remote)], bundle_dir)
 
-    # Detect a fresh device: a db with no drawers but a Bundle that already has
+    # Detect a fresh device: a db with no concepts but a Bundle that already has
     # concepts (e.g. a brand-new clone). Exporting an empty db would (correctly)
     # mean "delete everything" — so instead we skip the export and let the rebuild
     # below import the Bundle. Once imported, the db is non-empty and subsequent

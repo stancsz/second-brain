@@ -7,7 +7,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
-| G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
+| G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | SHIPPED iter-12 (M1+M2: schema, brain.py, brain_cli.py, bundle.py, sync.py, hooks, tests). M3 (commands/, docs/, references/, CHANGELOG narrative, README.zh.md) is new gap G23. Cooldown until iter-18. | 3 | 3 | 4 | 4.0 |
 | G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | Research+docs identify this as the differentiator; nothing built | 5 | 4 | 4 | 5.0 |
 | G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti v0.29.2 ships bi-temporal at MCP parity; we don't | 5 | 4 | 4 | 5.0 |
 | G10 | features | Structured affect (`sb_affect`) + affect table | Needed for emotional mimic agents; not built | 4 | 3 | 4 | 5.33 |
@@ -22,6 +22,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G19 | reliability | ~~Recall hook misses morphological matches~~ RESOLVED as output-encoding crash (cp1252 swallowed emoji print → empty stdout) | hook now reconfigures stdout to UTF-8; recall block reaches the model under cp1252; filler still silent | 4 | 3 | 4 | 5.33 |
 | G20 | trust | OKF spec conformance: verify `okf_version` lives in bundle-root `index.md` frontmatter, NOT as a separate file (per OKF v0.1 SPEC.md refetched iter-8) | SHIPPED iter-10 | 3 | 1 | 4 | 12.0 |
 | G21 | docs | README.zh.md parity for G14 — translate OKF v0.1, Concept (概念), git-sync, psychological-memory sections to Chinese | README.zh.md still says "笔记(Drawer)", "5 万条笔记" and does not mention OKF/sync/psych | 3 | 2 | 4 | 6.0 |
+| G23 | docs | M3 of R4: rename `drawer`→`concept` in remaining surface — `commands/brain.md`, `commands/history.md`, `docs/02-okf-and-terminology.md` (D001), `docs/06-build-plan.md`, `docs/07-pmf-and-gap-analysis.md`, `docs/08-iter7-findings.md`, `docs/board.md`, `docs/brief.md`, `docs/decisions/D001-...`, `docs/HANDOFF.md`, `docs/README.md`, `docs/tasks/T001-*`, `docs/tasks/T002-rename-drawer-to-concept.md`, `references/architecture.md`, `references/distill-archive.md`, plus historical CHANGELOG entries (rewrite or annotate?). M3 leaves the codebase clean to the `Concept` vocabulary in every file a user or future contributor could open. | 19 tracked files still say "drawer"; D001 coherence rule says docs and code use `Concept`; verifier docs-okf only checks README+SKILL so it would silently accept this gap | 3 | 2 | 5 | 7.5 |
 
 ## Shipped
 | id | dimension | shipped | note |
@@ -36,6 +37,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G14 | docs | iter-9 | README/SKILL OKF terminology, multi-device sync, psychological-memory foundation documented; verifier docs-okf (hardened iter-7 with cp1252 fix iter-8). Cooldown until iter-15. |
 | G20 | trust | iter-10 | OKF v0.1 spec-shape verifier (okf_version placement, subdir-index frontmatter absence, every concept has type, no concept has okf_version); code was already spec-compliant. Cooldown until iter-16. |
 | G22 | trust | iter-11 | R14 secret-history + config-shape secret scan (15,804 history lines + tracked *.toml/*.ini/*.yaml/*.yml/*.env; 0 leaks); 0 config files in this repo, the sync.toml half of R14 is locked in for when the config exists. Cooldown until iter-17. |
+| G04 | features | iter-12 | Schema + code rename `drawers`→`concepts` (M1+M2 of R4): schema.sql v3.0, brain.py uses concept/concepts everywhere except intentional old-name references in `_migrate_v21_to_concepts()`, brain_cli.py/bundle.py/sync.py/capture_conversation.py/recall_memories.py/test_brain.py/test_capture_hook.py/test_recall_hook.py all use new vocabulary. Auto-migration of v2.1 brain.db in-place (table rename + FTS5 rebuild + trigger replacement). Verifier schema-rename (red→green; 8 sub-checks). 51/51 test_brain.py tests pass; full mochu corpus 12/12 green; ship_gate PASS. Cooldown until iter-18. |
 
 ## Parked
 _(none yet)_

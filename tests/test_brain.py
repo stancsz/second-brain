@@ -34,7 +34,7 @@ class TestBrain(unittest.TestCase):
     # 1. Basic CRUD
     # -----------------------------------------------------------------------
 
-    def test_add_returns_drawer_with_correct_fields(self):
+    def test_add_returns_concept_with_correct_fields(self):
         dr = self.b.add("Alpha", "hello world", collection="notes", tags=["a", "b"])
         self.assertEqual(dr["title"], "Alpha")
         self.assertEqual(dr["content"], "hello world")
@@ -74,7 +74,7 @@ class TestBrain(unittest.TestCase):
         self.b.delete(dr["id"], hard=True)
         self.assertIsNone(self.b.get(dr["id"]))
         row = self.b.con.execute(
-            "SELECT 1 FROM drawers WHERE id=?", (dr["id"],)
+            "SELECT 1 FROM concepts WHERE id=?", (dr["id"],)
         ).fetchone()
         self.assertIsNone(row)
 
@@ -129,17 +129,17 @@ class TestBrain(unittest.TestCase):
         """Directly verify the FTS rowid is gone from the index after hard delete."""
         dr = self.b.add("TriggerCheck", "canary_word_for_ad_trigger")
         rowid = self.b.con.execute(
-            "SELECT rowid FROM drawers WHERE id=?", (dr["id"],)
+            "SELECT rowid FROM concepts WHERE id=?", (dr["id"],)
         ).fetchone()[0]
         self.b.delete(dr["id"], hard=True)
         # The FTS shadow table content should not contain the canary word anymore.
         fts_hit = self.b.con.execute(
-            "SELECT rowid FROM drawers_fts WHERE drawers_fts MATCH 'canary_word_for_ad_trigger'"
+            "SELECT rowid FROM concepts_fts WHERE concepts_fts MATCH 'canary_word_for_ad_trigger'"
         ).fetchall()
         self.assertEqual(len(fts_hit), 0)
 
     # -----------------------------------------------------------------------
-    # 4. Soft delete: drawer hidden; restore brings it back with wikilinks
+    # 4. Soft delete: concept hidden; restore brings it back with wikilinks
     # -----------------------------------------------------------------------
 
     def test_soft_delete_hidden_from_search(self):
@@ -157,7 +157,7 @@ class TestBrain(unittest.TestCase):
         ids = [d["id"] for d in listed]
         self.assertNotIn(dr["id"], ids)
 
-    def test_restore_brings_back_drawer(self):
+    def test_restore_brings_back_concept(self):
         dr = self.b.add("Resurrect", "I will return")
         self.b.delete(dr["id"])
         self.assertIsNone(self.b.get(dr["id"]))
@@ -168,7 +168,7 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(restored["title"], "Resurrect")
 
     def test_restore_rederives_wikilinks(self):
-        """After restoring a drawer that references another, the wikilink
+        """After restoring a concept that references another, the wikilink
         relation must be re-established."""
         target = self.b.add("RestoredTarget", "I am the target")
         src = self.b.add("RestoredSource", "See [[RestoredTarget]] for details")
@@ -182,7 +182,7 @@ class TestBrain(unittest.TestCase):
         rels_after = self.b.related(src["id"])
         self.assertTrue(any(r["id"] == target["id"] for r in rels_after))
 
-    def test_restore_returns_false_for_live_drawer(self):
+    def test_restore_returns_false_for_live_concept(self):
         dr = self.b.add("NeverDeleted", "alive")
         self.assertFalse(self.b.restore(dr["id"]))
 
@@ -221,12 +221,12 @@ class TestBrain(unittest.TestCase):
     # -----------------------------------------------------------------------
 
     def test_pending_link_created_for_unknown_target(self):
-        src = self.b.add("PendSource", "Mentions [[FutureDrawer]] which doesn't exist")
+        src = self.b.add("PendSource", "Mentions [[FutureConcept]] which doesn't exist")
         pending = self.b.con.execute(
             "SELECT * FROM pending_links WHERE from_id=?", (src["id"],)
         ).fetchall()
         self.assertEqual(len(pending), 1)
-        self.assertEqual(pending[0]["target_title"], "FutureDrawer")
+        self.assertEqual(pending[0]["target_title"], "FutureConcept")
 
     def test_pending_link_resolves_when_target_added(self):
         src = self.b.add("EarlySource", "Waiting for [[LateTarget]]")
@@ -250,7 +250,7 @@ class TestBrain(unittest.TestCase):
         self.assertTrue(any(r["id"] == target["id"] for r in rels))
 
     def test_pending_link_resolves_on_retitle(self):
-        """Renaming a drawer to match a pending link target resolves the link."""
+        """Renaming a concept to match a pending link target resolves the link."""
         src = self.b.add("WaitingSource", "Waiting for [[EventualName]]")
         existing = self.b.add("WorkingName", "I'll be renamed")
 
@@ -282,13 +282,13 @@ class TestBrain(unittest.TestCase):
     # 7. Archive atomicity
     # -----------------------------------------------------------------------
 
-    def test_archive_moves_old_drawer_to_archive_db(self):
+    def test_archive_moves_old_concept_to_archive_db(self):
         fresh = self.b.add("Fresh", "just added")
         cold = self.b.add("Cold", "very old content")
 
-        # Age the cold drawer past the threshold.
+        # Age the cold concept past the threshold.
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (cold["id"],),
         )
         self.b.con.commit()
@@ -296,17 +296,17 @@ class TestBrain(unittest.TestCase):
         archive_path = Path(self.tmpdir) / "archive.db"
         result = self.b.archive(str(archive_path), older_than_days=180)
 
-        # Cold drawer must be gone from the working brain.
+        # Cold concept must be gone from the working brain.
         self.assertIsNone(self.b.get(cold["id"]))
 
-        # Fresh drawer must remain.
+        # Fresh concept must remain.
         self.assertIsNotNone(self.b.get(fresh["id"]))
 
-        # Archive DB must contain the cold drawer.
+        # Archive DB must contain the cold concept.
         archive = SecondBrain(archive_path)
         try:
             archived_dr = archive.con.execute(
-                "SELECT * FROM drawers WHERE id=?", (cold["id"],)
+                "SELECT * FROM concepts WHERE id=?", (cold["id"],)
             ).fetchone()
             self.assertIsNotNone(archived_dr)
             self.assertEqual(archived_dr["title"], "Cold")
@@ -317,7 +317,7 @@ class TestBrain(unittest.TestCase):
         self.b.add("Keeper", "fresh note")
         cold = self.b.add("OldNote", "stale content")
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (cold["id"],),
         )
         self.b.con.commit()
@@ -331,11 +331,11 @@ class TestBrain(unittest.TestCase):
     # 8. Archive refuses-all protection
     # -----------------------------------------------------------------------
 
-    def test_archive_refuses_when_all_drawers_would_be_removed(self):
-        """archive() must raise ValueError if every alive drawer would be archived."""
-        only = self.b.add("OnlyDrawer", "all alone")
+    def test_archive_refuses_when_all_concepts_would_be_removed(self):
+        """archive() must raise ValueError if every alive concept would be archived."""
+        only = self.b.add("OnlyConcept", "all alone")
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (only["id"],),
         )
         self.b.con.commit()
@@ -344,12 +344,12 @@ class TestBrain(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.b.archive(str(archive_path), older_than_days=180)
 
-    def test_archive_refuses_multiple_drawers_all_old(self):
-        """Same protection with more than one drawer, all old."""
+    def test_archive_refuses_multiple_concepts_all_old(self):
+        """Same protection with more than one concept, all old."""
         for i in range(3):
             dr = self.b.add(f"OldNote{i}", f"content {i}")
             self.b.con.execute(
-                "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+                "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
                 (dr["id"],),
             )
         self.b.con.commit()
@@ -398,7 +398,7 @@ class TestBrain(unittest.TestCase):
         self.assertNotIn("NotInColl", md)
 
     # -----------------------------------------------------------------------
-    # 10. export_vault writes one .md file per drawer
+    # 10. export_vault writes one .md file per concept
     # -----------------------------------------------------------------------
 
     def test_export_vault_creates_directory(self):
@@ -409,8 +409,8 @@ class TestBrain(unittest.TestCase):
         self.assertTrue(vault_dir.exists())
         self.assertTrue(vault_dir.is_dir())
 
-    def test_export_vault_one_file_per_drawer(self):
-        drawers = [
+    def test_export_vault_one_file_per_concept(self):
+        concepts = [
             self.b.add(f"VaultNote{i}", f"body {i}") for i in range(3)
         ]
         vault_dir = Path(self.tmpdir) / "vault_files"
@@ -444,7 +444,7 @@ class TestBrain(unittest.TestCase):
         vault_dir = Path(self.tmpdir) / "vault_del"
         self.b.export_vault(str(vault_dir))
         md_files = list(vault_dir.glob("*.md"))
-        # Only the live drawer should appear.
+        # Only the live concept should appear.
         all_text = "".join(f.read_text() for f in md_files)
         self.assertIn("LiveVault", all_text)
         self.assertNotIn("DeadVault", all_text)
@@ -530,7 +530,7 @@ class TestBrain(unittest.TestCase):
         finally:
             b2.close()
 
-    def test_vault_roundtrip_multiple_drawers(self):
+    def test_vault_roundtrip_multiple_concepts(self):
         ids = []
         for i in range(5):
             dr = self.b.add(f"Multi{i}", f"body {i}", tags=[f"tag{i}"])
@@ -555,7 +555,7 @@ class TestBrain(unittest.TestCase):
         vault_dir = Path(self.tmpdir) / "vault_merge_skip"
         self.b.export_vault(str(vault_dir))
 
-        # Import into a brain that already has the same drawer.
+        # Import into a brain that already has the same concept.
         db2_path = Path(self.tmpdir) / "brain2_merge.db"
         b2 = SecondBrain(db2_path)
         try:
@@ -572,9 +572,9 @@ class TestBrain(unittest.TestCase):
     # 12. import_ from JSON (existing behavior)
     # -----------------------------------------------------------------------
 
-    def test_import_json_adds_drawers(self):
+    def test_import_json_adds_concepts(self):
         import json, tempfile as _tf
-        drawers_data = [
+        concepts_data = [
             {
                 "id": "aabbcc001",
                 "title": "JSONImported",
@@ -588,7 +588,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         result = self.b.import_(json_path, mode="merge")
@@ -605,7 +605,7 @@ class TestBrain(unittest.TestCase):
     def test_import_json_merge_skips_existing(self):
         import json, tempfile as _tf
         dr = self.b.add("PreExisting", "already here")
-        drawers_data = [
+        concepts_data = [
             {
                 "id": dr["id"],
                 "title": "PreExisting",
@@ -619,7 +619,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         result = self.b.import_(json_path, mode="merge")
@@ -629,7 +629,7 @@ class TestBrain(unittest.TestCase):
     def test_import_json_replace_overwrites(self):
         import json, tempfile as _tf
         dr = self.b.add("ToOverwrite", "original")
-        drawers_data = [
+        concepts_data = [
             {
                 "id": dr["id"],
                 "title": "ToOverwrite",
@@ -643,7 +643,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         self.b.import_(json_path, mode="replace")
@@ -652,12 +652,12 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(fetched["content"], "replaced content")
 
     def test_import_json_resolves_wikilinks_after_bulk(self):
-        """After a JSON import the cross-refs between the imported drawers
+        """After a JSON import the cross-refs between the imported concepts
         should be resolved (wikilinks re-synced over the full set)."""
         import json, tempfile as _tf
         id_a = "wljson_aaa"
         id_b = "wljson_bbb"
-        drawers_data = [
+        concepts_data = [
             {
                 "id": id_a,
                 "title": "JSONNoteA",
@@ -680,7 +680,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         self.b.import_(json_path, mode="merge")

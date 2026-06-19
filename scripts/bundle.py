@@ -4,11 +4,11 @@
 The OKF Bundle (a directory of Concept files) is the source of truth; brain.db
 is a derived cache. `export` writes the whole brain out as an OKF Bundle;
 `rebuild` walks a Bundle and reconstructs a fresh brain.db from it, losing
-nothing — drawers, tags, sources, collections, soft-delete state, wikilink
+nothing — concepts, tags, sources, collections, soft-delete state, wikilink
 relations, and the FTS index.
 
 Until later gaps add real columns for the psychological layer (G08–G10), a
-Concept's `type` and `sb_*` extension fields are stored in `drawers.metadata`
+Concept's `type` and `sb_*` extension fields are stored in `concepts.metadata`
 so the round-trip stays lossless without a schema change.
 """
 from __future__ import annotations
@@ -35,14 +35,14 @@ def _unlink_retry(p, attempts=10):
             if i == attempts - 1:
                 raise
             time.sleep(0.05)
-# Concept extension fields carried through drawers.metadata (besides okf_type).
+# Concept extension fields carried through concepts.metadata (besides okf_type).
 _SB_FIELDS = ["sb_subject", "sb_valid_from", "sb_valid_to", "sb_supersedes",
               "sb_affect", "sb_relations", "description"]
 
 
-# -- drawer <-> concept ----------------------------------------------------
+# -- concept <-> concept ----------------------------------------------------
 
-def _drawer_to_concept(brain: SecondBrain, row) -> dict:
+def _concept_to_concept(brain: SecondBrain, row) -> dict:
     meta = json.loads(row["metadata"] or "{}")
     return {
         "sb_id": row["id"],
@@ -65,7 +65,7 @@ def _drawer_to_concept(brain: SecondBrain, row) -> dict:
 
 
 def _concept_to_meta(concept: dict) -> dict:
-    """Pack non-column Concept fields back into drawers.metadata."""
+    """Pack non-column Concept fields back into concepts.metadata."""
     meta = {}
     if concept.get("type") and concept["type"] != "Note":
         meta["okf_type"] = concept["type"]
@@ -142,7 +142,7 @@ def _read_sb_id(path: Path) -> str | None:
 
 def export(brain: SecondBrain, bundle_dir) -> dict:
     """Write the brain as an OKF Bundle *incrementally* — only concept files that
-    actually changed are rewritten, files for hard-deleted drawers are removed,
+    actually changed are rewritten, files for hard-deleted concepts are removed,
     and soft-deletes move to `.trash/`. This idempotence is what lets git merge
     a remote's edits cleanly: an unchanged concept is left byte-for-byte alone, so
     a remote delete/edit of it applies without a spurious local-overwrite conflict.
@@ -154,13 +154,13 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
     """
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    rows = brain.con.execute("SELECT * FROM drawers ORDER BY created_at").fetchall()
+    rows = brain.con.execute("SELECT * FROM concepts ORDER BY created_at").fetchall()
 
     used: set = set()
     desired: dict = {}    # sb_id -> (actual_rel, text)
     entries = []          # live concepts only -> index/log
     for row in rows:
-        concept = _drawer_to_concept(brain, row)
+        concept = _concept_to_concept(brain, row)
         deleted = bool(concept.get("sb_deleted"))
         rel = _unique_path(concept, used)             # live-style path
         actual = f".trash/{rel}" if deleted else rel   # tombstones under .trash/
@@ -192,7 +192,7 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
         if (not target.exists()) or target.read_text(encoding="utf-8") != text:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
-    # Remove files whose drawer no longer exists in the db (local hard-delete).
+    # Remove files whose concept no longer exists in the db (local hard-delete).
     for sbid, rel in current.items():
         if sbid not in desired:
             _unlink_retry(bundle_dir / rel)
@@ -277,17 +277,17 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
             continue
         rel = f.relative_to(bundle_dir).as_posix()
         if rel.startswith(".git/") or "/.git/" in rel or rel.endswith(".conflict.md"):
-            continue  # conflict copies await human resolution; not imported as drawers
+            continue  # conflict copies await human resolution; not imported as concepts
         # Tombstones live under .trash/; strip the prefix so the original
         # collection is recovered from the path (sb_deleted drives the state).
         parse_path = rel[len(".trash/"):] if rel.startswith(".trash/") else rel
         concepts.append(okf.from_markdown(f.read_text(encoding="utf-8"), path=parse_path))
 
-    # Insert all drawers first (so wikilink resolution sees the full set).
+    # Insert all concepts first (so wikilink resolution sees the full set).
     for c in concepts:
         meta = _concept_to_meta(c)
         brain.con.execute(
-            "INSERT INTO drawers (id, title, content, collection, sources, "
+            "INSERT INTO concepts (id, title, content, collection, sources, "
             "metadata, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, "
             "COALESCE(?, CURRENT_TIMESTAMP), ?)",
             (c["sb_id"] or _uuid(), c["title"], c["body"] or "", c["collection"],
@@ -296,7 +296,7 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
         )
         brain._set_tags(c["sb_id"], c["tags"] or [])
 
-    # Re-derive wikilink relations + resolve cross-references for ALIVE drawers.
+    # Re-derive wikilink relations + resolve cross-references for ALIVE concepts.
     for c in concepts:
         if c["sb_deleted"]:
             continue

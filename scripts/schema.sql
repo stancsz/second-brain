@@ -1,7 +1,9 @@
--- SecondBrain schema v2.1
--- Fixes over v2: external-content FTS5 'delete' command in triggers,
--- AFTER DELETE trigger, pending_links promoted to a real table,
--- search views that exclude soft-deleted rows, consistent schema_version.
+-- SecondBrain schema v3.0 (OKF v0.1)
+-- v2.1 -> v3.0: 'drawers' -> 'concepts', 'drawer_tags' -> 'concept_tags',
+-- 'drawer_id' -> 'concept_id'. FTS5 + triggers renamed to match.
+-- Migration is performed by SecondBrain._migrate_v21_to_concepts() BEFORE
+-- this script runs, so on a v2.1 DB the table list is already
+-- 'concepts'-flavored and the IF NOT EXISTS clauses below are no-ops.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -11,25 +13,24 @@ PRAGMA synchronous = NORMAL;
 -- Core tables
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS drawers (
-    id          TEXT      PRIMARY KEY,          -- UUID
+CREATE TABLE IF NOT EXISTS concepts (
+    id          TEXT      PRIMARY KEY,
     title       TEXT      NOT NULL,
     content     TEXT      NOT NULL,
-    collection  TEXT      DEFAULT NULL,         -- plain string, no FK
-    sources     TEXT      DEFAULT '[]',         -- JSON array of URLs
+    collection  TEXT      DEFAULT NULL,
+    sources     TEXT      DEFAULT '[]',
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at  TIMESTAMP DEFAULT NULL,         -- soft delete
-    metadata    TEXT      DEFAULT '{}'          -- arbitrary JSON
+    deleted_at  TIMESTAMP DEFAULT NULL,
+    metadata    TEXT      DEFAULT '{}'
 );
 
-CREATE INDEX IF NOT EXISTS idx_drawers_collection
-    ON drawers(collection) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_drawers_updated
-    ON drawers(updated_at DESC) WHERE deleted_at IS NULL;
--- Title lookups for wikilink resolution (case-insensitive).
-CREATE INDEX IF NOT EXISTS idx_drawers_title_nocase
-    ON drawers(title COLLATE NOCASE) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_concepts_collection
+    ON concepts(collection) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_concepts_updated
+    ON concepts(updated_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_concepts_title_nocase
+    ON concepts(title COLLATE NOCASE) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS tags (
     id         TEXT      PRIMARY KEY,
@@ -38,71 +39,65 @@ CREATE TABLE IF NOT EXISTS tags (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS drawer_tags (
-    drawer_id TEXT NOT NULL,
-    tag_id    TEXT NOT NULL,
-    PRIMARY KEY (drawer_id, tag_id),
-    FOREIGN KEY (drawer_id) REFERENCES drawers(id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id)    REFERENCES tags(id)    ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS concept_tags (
+    concept_id TEXT NOT NULL,
+    tag_id     TEXT NOT NULL,
+    PRIMARY KEY (concept_id, tag_id),
+    FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id)     REFERENCES tags(id)     ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_drawer_tags_tag ON drawer_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_concept_tags_tag ON concept_tags(tag_id);
 
 CREATE TABLE IF NOT EXISTS relations (
     id            TEXT      PRIMARY KEY,
     from_id       TEXT      NOT NULL,
     to_id         TEXT      NOT NULL,
-    relation_type TEXT      NOT NULL DEFAULT 'related',  -- references|contradicts|expands|related
-    strength      REAL               DEFAULT 0.5,        -- 0.0-1.0
-    source        TEXT               DEFAULT 'manual',   -- manual|wikilink|inferred
+    relation_type TEXT      NOT NULL DEFAULT 'related',
+    strength      REAL               DEFAULT 0.5,
+    source        TEXT               DEFAULT 'manual',
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (from_id) REFERENCES drawers(id) ON DELETE CASCADE,
-    FOREIGN KEY (to_id)   REFERENCES drawers(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_id) REFERENCES concepts(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_id)   REFERENCES concepts(id) ON DELETE CASCADE,
     UNIQUE (from_id, to_id, source)
 );
 CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to   ON relations(to_id);
 
--- Unresolved wikilinks live in their own table, not buried in JSON metadata.
--- Resolution on /brain-add is a single indexed lookup, not a full-table JSON scan.
 CREATE TABLE IF NOT EXISTS pending_links (
     id            TEXT PRIMARY KEY,
     from_id       TEXT NOT NULL,
-    target_title  TEXT NOT NULL,          -- the [[Title]] that did not resolve
+    target_title  TEXT NOT NULL,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (from_id) REFERENCES drawers(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_id) REFERENCES concepts(id) ON DELETE CASCADE,
     UNIQUE (from_id, target_title)
 );
 CREATE INDEX IF NOT EXISTS idx_pending_target
     ON pending_links(target_title COLLATE NOCASE);
 
 -- ---------------------------------------------------------------------------
--- Full-text search (external-content FTS5 over drawers)
+-- Full-text search (external-content FTS5 over concepts)
 -- ---------------------------------------------------------------------------
 
-CREATE VIRTUAL TABLE IF NOT EXISTS drawers_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts USING fts5(
     title, content,
-    content=drawers,
+    content=concepts,
     content_rowid=rowid
 );
 
--- AFTER INSERT: add the new row to the index.
-CREATE TRIGGER IF NOT EXISTS drawers_ai AFTER INSERT ON drawers BEGIN
-  INSERT INTO drawers_fts(rowid, title, content)
+CREATE TRIGGER IF NOT EXISTS concepts_ai AFTER INSERT ON concepts BEGIN
+  INSERT INTO concepts_fts(rowid, title, content)
   VALUES (new.rowid, new.title, new.content);
 END;
 
--- AFTER DELETE: external-content tables require the special 'delete' command,
--- a raw DELETE corrupts the index. Missing this leaves orphaned FTS rows.
-CREATE TRIGGER IF NOT EXISTS drawers_ad AFTER DELETE ON drawers BEGIN
-  INSERT INTO drawers_fts(drawers_fts, rowid, title, content)
+CREATE TRIGGER IF NOT EXISTS concepts_ad AFTER DELETE ON concepts BEGIN
+  INSERT INTO concepts_fts(concepts_fts, rowid, title, content)
   VALUES ('delete', old.rowid, old.title, old.content);
 END;
 
--- AFTER UPDATE: 'delete' the old contents, then insert the new.
-CREATE TRIGGER IF NOT EXISTS drawers_au AFTER UPDATE ON drawers BEGIN
-  INSERT INTO drawers_fts(drawers_fts, rowid, title, content)
+CREATE TRIGGER IF NOT EXISTS concepts_au AFTER UPDATE ON concepts BEGIN
+  INSERT INTO concepts_fts(concepts_fts, rowid, title, content)
   VALUES ('delete', old.rowid, old.title, old.content);
-  INSERT INTO drawers_fts(rowid, title, content)
+  INSERT INTO concepts_fts(rowid, title, content)
   VALUES (new.rowid, new.title, new.content);
 END;
 
@@ -115,4 +110,4 @@ CREATE TABLE IF NOT EXISTS _meta (
     value      TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-INSERT OR IGNORE INTO _meta VALUES ('schema_version', '1', CURRENT_TIMESTAMP);
+INSERT OR IGNORE INTO _meta VALUES ('schema_version', '2', CURRENT_TIMESTAMP);

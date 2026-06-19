@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed
+- **Schema + code rename: `drawers` → `concepts`** (R4 / G04, mochu iter-12) —
+  the live SQLite table is now `concepts` (OKF v0.1 canonical name), with
+  matching `concept_tags` / `concepts_fts` / `concepts_ai/ad/au` triggers.
+  A v2.1 brain.db auto-migrates on first open via
+  `SecondBrain._migrate_v21_to_concepts()`: the table is renamed in place,
+  the FTS5 index is rebuilt, the old triggers are dropped (they survive
+  `ALTER TABLE RENAME` with a stale body referring to the dropped FTS5
+  table), and the new triggers + FTS5 are recreated against the renamed
+  base table. All public methods of `SecondBrain` now use
+  `concept`/`concepts` in their return dict keys and parameter names
+  (e.g. `export()["concepts"]`, `add() → {"id", "title", "content", ...}`).
+  `scripts/brain_cli.py`, `scripts/bundle.py`, `scripts/sync.py`,
+  `hooks/capture_conversation.py`, `hooks/recall_memories.py`, and their
+  tests are all updated to the new vocabulary. `tests/test_brain.py`
+  passes 51/51; the full mochu corpus is 12/12 green. M3 of R4
+  (commands/ docs/ references/ CHANGELOG narrative updates) is
+  intentionally left as a separate gap so this iter's diff stays
+  focused on the schema + code surface.
+  - Known limitations: `commands/brain.md`, `commands/history.md`,
+    `docs/02-okf-and-terminology.md`, `references/architecture.md`,
+    `references/distill-archive.md`, `README.zh.md`, and several
+    `docs/tasks/*` still mention `drawer`/`drawers`. These are
+    documentation-only (no code) and are tracked as M3 of R4.
+
 ### Added
 - **Conflict parking** (`scripts/sync.py`) — when two devices edit the same concept concurrently,
   `sync` no longer crashes or clobbers: the rebase conflict is parked — the upstream version stays
