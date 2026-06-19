@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- **Git sync spine** (`scripts/sync.py`) — `sync(db, bundle, remote)` makes memory portable
+  across devices: serialize brain.db → OKF Bundle, commit, `pull --rebase`, push, then rebuild
+  the brain from the merged Bundle. Git is the single bidirectional channel; works fully offline
+  / local-only when no remote is set. Deterministic export means an unchanged brain produces no
+  commit. Verified by a real two-clone multi-device round-trip. (mochu iter-4, gap G05)
+  - Also hardened `bundle.rebuild` to flush the WAL and retry file replacement (Windows handle lag);
+    `sync` no longer leaks the rebuilt connection.
+  - Known limitations: concurrent edits to the *same* concept are not yet parked as conflicts (G06);
+    deletes don't yet propagate as tombstones over git (G07); no cloud mirrors yet (G11+).
 - **OKF reserved files on export** (`scripts/bundle.py`) — `export` now writes a root `index.md`
   declaring `okf_version: "0.1"` and listing collections + root concepts, a per-subdirectory
   `index.md` (progressive disclosure, no frontmatter per OKF §6), and a root `log.md` with

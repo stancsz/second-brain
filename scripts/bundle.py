@@ -21,6 +21,20 @@ import okf
 from brain import SecondBrain, _uuid  # noqa: F401
 
 RESERVED = {"index", "log"}
+
+
+def _unlink_retry(p, attempts=10):
+    """Unlink a file, tolerating brief Windows handle-release lag after a
+    sqlite connection close."""
+    import time
+    for i in range(attempts):
+        try:
+            p.unlink()
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.05)
 # Concept extension fields carried through drawers.metadata (besides okf_type).
 _SB_FIELDS = ["sb_subject", "sb_valid_from", "sb_valid_to", "sb_supersedes",
               "sb_affect", "sb_relations", "description"]
@@ -188,7 +202,7 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
     for suffix in ("", "-wal", "-shm"):
         p = Path(str(db_path) + suffix)
         if p.exists():
-            p.unlink()
+            _unlink_retry(p)
 
     brain = SecondBrain(db_path)
     concepts = []
