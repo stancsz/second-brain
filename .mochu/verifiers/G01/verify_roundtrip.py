@@ -71,6 +71,13 @@ CONCEPTS = [
     C(sb_id="h8", title="Tombstoned", collection="notes",
       sb_deleted="2026-06-18T21:00:00Z", body="Soft-deleted concept."),
     C(sb_id="i9", title="Empty Body", collection="notes", body=""),
+    # j10: body legitimately contains a "# Citations" heading as prose, but the
+    # concept has NO sources — the parser must NOT strip it (regression: it did).
+    C(sb_id="j10", title="Citations Word In Prose", collection="notes",
+      body="Intro line.\n\n# Citations\n\nThis is my actual prose, not a source list."),
+    # k11: purely non-ASCII title — slug is empty, path must fall back to sb_id
+    # (not a colliding 'untitled.md').
+    C(sb_id="k11", title="日本語のみ", collection=None, body="body"),
 ]
 
 
