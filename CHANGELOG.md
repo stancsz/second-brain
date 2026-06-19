@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- **Tombstone deletes over git** (`scripts/bundle.py`, `scripts/sync.py`) — deletes now survive
+  sync: a soft-delete moves the concept to `.trash/` as a tombstone and propagates to other
+  devices; `restore` moves it back and propagates; a hard-delete removes the file so it is gone
+  everywhere and never resurrects. Export is now **incremental** (only changed concepts are
+  rewritten, keyed by `sb_id`), which both fixes a latent resurrection bug and lets git merge a
+  remote's edits to an unchanged concept without a spurious local-overwrite conflict. `sync` now
+  detects a fresh clone (empty db + populated bundle) and imports rather than wiping. log.md dates
+  use the round-trip-stable `updated_at` so resyncs don't churn. (mochu iter-5, gap G07)
 - **Git sync spine** (`scripts/sync.py`) — `sync(db, bundle, remote)` makes memory portable
   across devices: serialize brain.db → OKF Bundle, commit, `pull --rebase`, push, then rebuild
   the brain from the merged Bundle. Git is the single bidirectional channel; works fully offline

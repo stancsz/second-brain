@@ -93,6 +93,18 @@ def _unique_path(concept: dict, used: set) -> str:
     return path
 
 
+def _prune_empty_dirs(bundle_dir: Path) -> None:
+    """Remove now-empty subdirectories (e.g. a collection emptied by deletes,
+    or an emptied .trash), but never the bundle root or .git."""
+    for d in sorted(bundle_dir.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if not d.is_dir() or ".git" in d.parts:
+            continue
+        try:
+            next(d.iterdir())
+        except StopIteration:
+            d.rmdir()
+
+
 def _description(concept: dict) -> str:
     """A one-line description for index/log listings."""
     d = concept.get("description")
@@ -111,30 +123,83 @@ def _iso_date(ts) -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _read_sb_id(path: Path) -> str | None:
+    """Cheaply read a concept file's sb_id from its frontmatter."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    for line in text.split("\n")[1:]:
+        if line.strip() == "---":
+            break
+        m = re.match(r"sb_id:\s*(.*)$", line)
+        if m:
+            return m.group(1).strip().strip('"')
+    return None
+
+
 def export(brain: SecondBrain, bundle_dir) -> dict:
-    """Write the entire brain (including soft-deleted drawers) as an OKF Bundle,
-    with conformant reserved files (per-directory index.md, a root log.md, and an
-    okf_version pin in the root index.md)."""
+    """Write the brain as an OKF Bundle *incrementally* — only concept files that
+    actually changed are rewritten, files for hard-deleted drawers are removed,
+    and soft-deletes move to `.trash/`. This idempotence is what lets git merge
+    a remote's edits cleanly: an unchanged concept is left byte-for-byte alone, so
+    a remote delete/edit of it applies without a spurious local-overwrite conflict.
+
+    Reserved index.md / log.md are regenerated deterministically (identical input
+    → identical bytes → no git churn). Note: the caller must NOT run this on a
+    device whose db is empty-but-bundle-is-full (a fresh clone) — sync.py guards
+    that case, since here an empty db would (correctly) mean "remove everything".
+    """
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     rows = brain.con.execute("SELECT * FROM drawers ORDER BY created_at").fetchall()
+
     used: set = set()
-    entries = []  # {rel, title, desc, collection, created}
+    desired: dict = {}    # sb_id -> (actual_rel, text)
+    entries = []          # live concepts only -> index/log
     for row in rows:
         concept = _drawer_to_concept(brain, row)
-        rel = _unique_path(concept, used)
-        f = bundle_dir / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(okf.to_markdown(concept), encoding="utf-8")
-        entries.append({
-            "rel": rel, "title": concept["title"], "desc": _description(concept),
-            "collection": (concept.get("collection") or "").strip("/"),
-            "created": _iso_date(row["created_at"]),
-        })
+        deleted = bool(concept.get("sb_deleted"))
+        rel = _unique_path(concept, used)             # live-style path
+        actual = f".trash/{rel}" if deleted else rel   # tombstones under .trash/
+        desired[concept["sb_id"]] = (actual, okf.to_markdown(concept))
+        if not deleted:
+            entries.append({
+                "rel": rel, "title": concept["title"], "desc": _description(concept),
+                "collection": (concept.get("collection") or "").strip("/"),
+                "date": _iso_date(row["updated_at"]),  # updated_at is round-trip-stable
+            })
+
+    # Map the current bundle: sb_id -> existing rel path.
+    current: dict = {}
+    for f in bundle_dir.rglob("*.md"):
+        rel = f.relative_to(bundle_dir).as_posix()
+        if rel.startswith(".git/") or "/.git/" in rel or f.name in ("index.md", "log.md"):
+            continue
+        sbid = _read_sb_id(f)
+        if sbid:
+            current[sbid] = rel
+
+    # Apply desired state: move/write only what changed.
+    for sbid, (actual, text) in desired.items():
+        old = current.get(sbid)
+        if old and old != actual:
+            _unlink_retry(bundle_dir / old)            # e.g. live -> .trash move
+        target = bundle_dir / actual
+        if (not target.exists()) or target.read_text(encoding="utf-8") != text:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+    # Remove files whose drawer no longer exists in the db (local hard-delete).
+    for sbid, rel in current.items():
+        if sbid not in desired:
+            _unlink_retry(bundle_dir / rel)
+    _prune_empty_dirs(bundle_dir)
 
     _write_indexes(bundle_dir, entries)
     _write_log(bundle_dir, entries)
-    return {"concepts": len(entries), "path": str(bundle_dir)}
+    return {"concepts": len(rows), "live": len(entries), "path": str(bundle_dir)}
 
 
 def _write_indexes(bundle_dir: Path, entries: list) -> None:
@@ -181,7 +246,7 @@ def _write_log(bundle_dir: Path, entries: list) -> None:
     """Root log.md: ISO date-grouped creation entries, newest date first (OKF §7)."""
     by_date: dict = {}
     for e in entries:
-        by_date.setdefault(e["created"], []).append(e)
+        by_date.setdefault(e["date"], []).append(e)
     lines = ["# Update Log", ""]
     for date in sorted(by_date, reverse=True):
         lines.append(f"## {date}")
@@ -210,7 +275,12 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
         if f.name in ("index.md", "log.md"):
             continue
         rel = f.relative_to(bundle_dir).as_posix()
-        concepts.append(okf.from_markdown(f.read_text(encoding="utf-8"), path=rel))
+        if rel.startswith(".git/") or "/.git/" in rel:
+            continue
+        # Tombstones live under .trash/; strip the prefix so the original
+        # collection is recovered from the path (sb_deleted drives the state).
+        parse_path = rel[len(".trash/"):] if rel.startswith(".trash/") else rel
+        concepts.append(okf.from_markdown(f.read_text(encoding="utf-8"), path=parse_path))
 
     # Insert all drawers first (so wikilink resolution sees the full set).
     for c in concepts:

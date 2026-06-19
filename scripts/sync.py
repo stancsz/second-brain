@@ -37,6 +37,25 @@ def ensure_repo(bundle_dir) -> Path:
     return bundle_dir
 
 
+def _is_fresh_device(db_path, bundle_dir) -> bool:
+    """True if the db has zero drawers but the Bundle already holds concept
+    files — i.e. a fresh clone whose cache hasn't been imported yet."""
+    bundle_dir = Path(bundle_dir)
+    has_concepts = any(
+        f.name not in ("index.md", "log.md")
+        and ".git/" not in f.relative_to(bundle_dir).as_posix()
+        for f in bundle_dir.rglob("*.md")
+    )
+    if not has_concepts:
+        return False
+    if not Path(db_path).exists():
+        return True
+    b = SecondBrain(db_path)
+    n = b.con.execute("SELECT COUNT(*) c FROM drawers").fetchone()["c"]
+    b.close()
+    return n == 0
+
+
 def _current_branch(bundle_dir):
     r = _git(["rev-parse", "--abbrev-ref", "HEAD"], bundle_dir, check=False)
     if r.returncode != 0:
@@ -57,17 +76,26 @@ def sync(db_path, bundle_dir, remote=None, message="secondbrain sync") -> dict:
         if "origin" not in have:
             _git(["remote", "add", "origin", str(remote)], bundle_dir)
 
-    # 1. Serialize the brain into the Bundle (files are the source of truth).
-    b = SecondBrain(db_path)
-    bundle.export(b, bundle_dir)
-    b.checkpoint_and_close()  # flush WAL so rebuild can replace the file (Windows)
+    # Detect a fresh device: a db with no drawers but a Bundle that already has
+    # concepts (e.g. a brand-new clone). Exporting an empty db would (correctly)
+    # mean "delete everything" — so instead we skip the export and let the rebuild
+    # below import the Bundle. Once imported, the db is non-empty and subsequent
+    # syncs take the normal incremental-export path.
+    fresh = _is_fresh_device(db_path, bundle_dir)
 
-    # 2. Commit local changes (skip if the tree is clean — deterministic export
-    #    means unchanged drawers produce no diff).
-    _git(["add", "-A"], bundle_dir)
-    committed = _git(["diff", "--cached", "--quiet"], bundle_dir, check=False).returncode != 0
-    if committed:
-        _git(["commit", "-m", message], bundle_dir)
+    committed = False
+    if not fresh:
+        # 1. Serialize local edits into the Bundle (incremental — only changes).
+        b = SecondBrain(db_path)
+        bundle.export(b, bundle_dir)
+        b.checkpoint_and_close()  # flush WAL so rebuild can replace the file (Windows)
+
+        # 2. Commit local changes (skip if the tree is clean).
+        _git(["add", "-A"], bundle_dir)
+        committed = _git(["diff", "--cached", "--quiet"], bundle_dir,
+                         check=False).returncode != 0
+        if committed:
+            _git(["commit", "-m", message], bundle_dir)
 
     branch = _current_branch(bundle_dir)
     pulled = pushed = False
