@@ -5,8 +5,8 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 
 ## Portability & OKF
 - [ ] R1 Every Concept persists as an OKF v0.1-conformant markdown file (frontmatter with non-empty `type`); `brain okf-lint` passes — verifier: okf-conformance (G01,G03)
-- [ ] R2 Round-trip identity: `DB → files → DB` reproduces the store byte-for-meaning — verifier: okf-roundtrip (G01,G02) — _G01 Concept⇄markdown half DONE (iter-1); awaits G02 DB integration_
-- [ ] R3 SQLite is fully rebuildable from files; deleting brain.db and running `rebuild` loses nothing — verifier: rebuild-from-bundle (G02)
+- [x] R2 Round-trip identity: `DB → files → DB` reproduces the store byte-for-meaning — verifier: okf-roundtrip + bundle-rebuild (G01,G02) — DONE iter-2
+- [x] R3 SQLite is fully rebuildable from files; deleting brain.db and running `rebuild` loses nothing — verifier: bundle-rebuild (G02) — DONE iter-2
 - [ ] R4 Model/terminology is OKF-canonical (`Concept`, not `drawer`) across code, CLI, docs — verifier: terminology-rename (G04)
 
 ## Sync & survivability
