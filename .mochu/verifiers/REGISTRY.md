@@ -13,3 +13,4 @@ Run all via `python3 scripts/run_corpus.py`.
 | tombstone | reliability | Deletes propagate over git: soft-delete->.trash tombstone, restore reverses, hard-delete removes file with no resurrection | `python .mochu/verifiers/G07/verify_tombstone.py` | iter-5 |
 | conflict | reliability | Concurrent same-concept edits park as *.conflict.md (no crash, no clobber, clean tree, single canonical import) | `python .mochu/verifiers/G06/verify_conflict.py` | iter-6 |
 | recall-encoding | reliability | Proactive recall hook emits its block (incl. unicode) under a cp1252 stdout; filler prompts stay silent | `python .mochu/verifiers/G19/verify_recall.py` | iter-7 |
+| docs-okf | docs | README.md and SKILL.md updated with OKF terminology (Concept, Bundle, sync); psychological memory mentioned | `python .mochu/verifiers/G14/verify_docs.py` | iter-7 |
