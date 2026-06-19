@@ -7,7 +7,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 - [x] R1 Every Concept persists as an OKF v0.1-conformant markdown file (frontmatter with non-empty `type`); `brain okf-lint` passes — verifier: okf-conformance (G01,G03) — DONE iter-10 (G01+G03 already passed; G20 verifier added in iter-10 to lock in spec-shape rules: okf_version in index.md frontmatter, subdir indexes have no frontmatter, every concept has type, no concept has okf_version; the `brain okf-lint` CLI subcommand is not built — R1's binding verifier is G01+G03, not the CLI)
 - [x] R2 Round-trip identity: `DB → files → DB` reproduces the store byte-for-meaning — verifier: okf-roundtrip + bundle-rebuild (G01,G02) — DONE iter-2
 - [x] R3 SQLite is fully rebuildable from files; deleting brain.db and running `rebuild` loses nothing — verifier: bundle-rebuild (G02) — DONE iter-2
-- [x] R4 Model/terminology is OKF-canonical (`Concept`, not `drawer`) across code + CLI + schema + tests; docs surface (commands/, docs/, references/, README.zh.md, CHANGELOG historical entries) tracked as G23 — verifier: schema-rename (G04) — DONE iter-12 (M1+M2)
+- [x] R4 Model/terminology is OKF-canonical (`Concept`, not `drawer`) across code + CLI + schema + tests + docs surface (commands/, docs/, references/, README.zh.md); CHANGELOG historical entries intentionally out of scope (revisionism) — verifier: schema-rename (G04) + docs-surface-rename (G23) — DONE iter-13
 
 ## Sync & survivability
 - [x] R5 `brain sync` round-trips through a git remote; a second clone sees the same Bundle — verifier: git-sync (G05) — DONE iter-4

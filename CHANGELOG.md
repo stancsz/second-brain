@@ -3,6 +3,29 @@
 ## [Unreleased]
 
 ### Changed
+- **Docs surface rename: R4 M3 closed** (R4 / G23, mochu iter-13) — 9 tracked
+  files renamed `drawer`/`drawers`/`Drawers` → `concept`/`concepts`/`Concepts`
+  across `commands/`, `docs/`, `references/`, and `README.zh.md`. Total 59 hits.
+  `docs/02-okf-and-terminology.md`'s comparison table was restructured (the
+  old "Old → New" column would have silently shown the same word twice after
+  the rename; the file now describes the current canonical state, with the
+  rename history in `.mochu/ledger.md` iter-12 and `brain.py:_migrate_v21_to_concepts`).
+  `references/architecture.md` title updated v2.1 → v3.0 to match the body,
+  which now describes the v3.0 schema. New verifier `docs-surface-rename`
+  locks in zero residual `drawer` references across 13 in-scope files. R4
+  is now complete; the only `drawer` mentions left in tracked files are
+  intentional: in `brain.py:_migrate_v21_to_concepts` (the v2.1→v3.0 migration
+  function references the old `drawers`/`drawers_fts`/`drawers_ai/ad/au`
+  names by design), and in CHANGELOG.md (historical record of iter-1 through
+  iter-7 that used the old name).
+  - Known limitations: untracked files in `docs/` (08-iter7-findings.md,
+    HANDOFF.md, brief.md, decisions/D001-terminology-rename-before-phase-c.md,
+    tasks/T002-rename-drawer-to-concept.md) still contain `drawer` references
+    — these were never committed, so the G23 verifier (which scans git-tracked
+    files) correctly does not cover them. Tracked as new gap G24 (docs hygiene:
+    commit + rename these untracked docs files).
+
+### Changed
 - **Schema + code rename: `drawers` → `concepts`** (R4 / G04, mochu iter-12) —
   the live SQLite table is now `concepts` (OKF v0.1 canonical name), with
   matching `concept_tags` / `concepts_fts` / `concepts_ai/ad/au` triggers.
