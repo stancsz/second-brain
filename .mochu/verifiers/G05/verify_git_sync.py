@@ -96,7 +96,7 @@ def main():
         for f in fails:
             print("  -", f)
         sys.exit(1)
-    print("GIT SYNC PASS: A→B and B→A multi-device round-trip via git remote; converged; "
+    print("GIT SYNC PASS: A->B and B->A multi-device round-trip via git remote; converged; "
           "no-op resync clean")
 
 
