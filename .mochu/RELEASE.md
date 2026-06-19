@@ -10,7 +10,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 - [ ] R4 Model/terminology is OKF-canonical (`Concept`, not `drawer`) across code, CLI, docs — verifier: terminology-rename (G04)
 
 ## Sync & survivability
-- [ ] R5 `brain sync` round-trips through a git remote; a second clone sees the same Bundle — verifier: git-sync-roundtrip (G05)
+- [x] R5 `brain sync` round-trips through a git remote; a second clone sees the same Bundle — verifier: git-sync (G05) — DONE iter-4
 - [ ] R6 Divergent edits on two clones park as `*.conflict.md` instead of clobbering — verifier: conflict-parking (G06)
 - [ ] R7 A delete on clone A propagates to clone B (tombstone) and `restore` reverses it — verifier: tombstone-delete (G07)
 - [ ] R8 Push → wipe → restore → rebuild reproduces the Bundle from at least one cloud backend — verifier: backup-restore (G11)

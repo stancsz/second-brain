@@ -8,7 +8,6 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
 | G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | Code uses `drawers`/`drawer` throughout | 3 | 3 | 4 | 4.0 |
-| G05 | features | `brain sync` git spine: serialize→commit→pull --rebase→push→rebuild | No sync of any kind today | 5 | 4 | 4 | 5.0 |
 | G06 | reliability | Per-Concept conflict parking (`*.conflict.md`) + `/brain-conflicts` + `/brain-resolve` | No multi-device story; nothing handles divergence | 4 | 3 | 4 | 5.33 |
 | G07 | reliability | Tombstone deletes (`sb_deleted` + `.trash/`) that propagate over git | Current soft-delete is DB-only, won't sync | 3 | 2 | 4 | 6.0 |
 | G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | Research+docs identify this as the differentiator; nothing built | 5 | 4 | 4 | 5.0 |
@@ -30,6 +29,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G01 | features | iter-1 | OKF serializer `scripts/okf.py`; verifiers okf-roundtrip + okf-conformance. Cooldown until iter-7. |
 | G02 | features | iter-2 | Bundle export/rebuild `scripts/bundle.py`; verifier bundle-rebuild. SQLite disposable. Cooldown until iter-8. |
 | G03 | features | iter-3 | OKF reserved files in `bundle.export`; verifier index-log. Bundle OKF-conformant. Cooldown until iter-9. |
+| G05 | features | iter-4 | Git sync spine `scripts/sync.py`; verifier git-sync. Multi-device portable. Cooldown until iter-10. |
 
 ## Parked
 _(none yet)_
