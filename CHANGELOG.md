@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-20
+
 ### Added
 - **Selective-by-tag encryption for private Concepts** (R13 / G13, mochu iter-22)
   — Concepts that are private (tag `private`/`psych`, or OKF `type`
