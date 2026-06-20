@@ -14,7 +14,7 @@ stdin:
     }
 
 We turn the prompt into a safe full-text query, search the brain, and print
-a short block of the most relevant drawers to stdout. For UserPromptSubmit
+a short block of the most relevant concepts to stdout. For UserPromptSubmit
 hooks, stdout (with exit code 0) is injected into the model's context — so
 Claude sees the user's own notes *before* it answers, without the user
 having to ask "what do I know about X". This is the proactive counterpart
@@ -45,13 +45,13 @@ Design rules:
   (`~/.secondbrain/logs/`), not in the brain, so the brain is clean by
   construction. As belt-and-suspenders we also skip any legacy
   `Conversations` collection, in case an older brain still has one.
-- **Stay small.** Top few drawers, short snippets — the stdout cap is 10k
+- **Stay small.** Top few concepts, short snippets — the stdout cap is 10k
   chars and this runs on *every* prompt, so it has to be fast and quiet.
 
 Env switches:
 - `SECONDBRAIN_SKIP_RECALL=1`     disable proactive recall for the session
 - `SECONDBRAIN_DB=/path/brain.db` use a non-default brain
-- `SECONDBRAIN_RECALL_LIMIT=N`    max drawers to surface (default 3)
+- `SECONDBRAIN_RECALL_LIMIT=N`    max concepts to surface (default 3)
 - `SECONDBRAIN_RECALL_COLLECTION` restrict recall to one collection
 """
 
@@ -148,8 +148,8 @@ def _build_fts_query(prompt: str, max_terms: int = 10) -> "str | None":
 
 def _recall(prompt: str, db_path: "str | None", limit: int,
             only_collection: "str | None" = None) -> list:
-    """Search the brain for drawers relevant to the prompt. Returns a list of
-    drawer dicts (already excludes soft-deleted via SecondBrain.search)."""
+    """Search the brain for concepts relevant to the prompt. Returns a list of
+    concept dicts (already excludes soft-deleted via SecondBrain.search)."""
     query = _build_fts_query(prompt)
     if not query:
         return []
@@ -189,14 +189,14 @@ def _snippet(text: str, n: int = 100) -> str:
     return text[:n] + ("…" if len(text) > n else "")
 
 
-def _format_context(drawers: list) -> str:
-    """Render the recalled drawers as a compact context block for the model.
+def _format_context(concepts: list) -> str:
+    """Render the recalled concepts as a compact context block for the model.
 
     Kept terse on purpose: this prints on every prompt, so it must not feel
     like noise. Just the bullets — the SKILL.md tells the agent how to use
     them and when to stay quiet about them."""
     lines = ["🧠 second-brain — possibly relevant notes (cite 8-char id, ignore if irrelevant):"]
-    for d in drawers:
+    for d in concepts:
         coll = f" [{d['collection']}]" if d.get("collection") else ""
         lines.append(f"- \"{d['title']}\"{coll} ({d['id'][:8]})")
         snip = _snippet(d.get("content", ""))
@@ -205,9 +205,22 @@ def _format_context(drawers: list) -> str:
     return "\n".join(lines)
 
 
+def _force_utf8_stdout() -> None:
+    """Ensure stdout can carry the recall block's unicode (header emoji, CJK
+    titles) regardless of the console encoding. On a Windows cp1252 stdout the
+    default would raise UnicodeEncodeError mid-print, and the never-block handler
+    would swallow it — emitting nothing. Reconfigure to UTF-8 so recall actually
+    reaches the model."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
 def main() -> int:
     if os.environ.get("SECONDBRAIN_SKIP_RECALL") == "1":
         return 0
+    _force_utf8_stdout()
 
     payload = _read_payload()
     prompt = payload.get("prompt") or ""
@@ -222,13 +235,13 @@ def main() -> int:
     limit = max(1, min(limit, 15))
     only_collection = os.environ.get("SECONDBRAIN_RECALL_COLLECTION", "").strip() or None
 
-    drawers = _recall(prompt, db_path, limit, only_collection)
-    if not drawers:
+    concepts = _recall(prompt, db_path, limit, only_collection)
+    if not concepts:
         # Nothing relevant — stay silent, let the prompt through untouched.
         return 0
 
-    print(_format_context(drawers))
-    _log(f"recalled {len(drawers)} drawer(s) for prompt[:60]={prompt[:60]!r}")
+    print(_format_context(concepts))
+    _log(f"recalled {len(concepts)} concept(s) for prompt[:60]={prompt[:60]!r}")
     return 0
 
 

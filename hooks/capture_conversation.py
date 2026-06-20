@@ -11,7 +11,7 @@ Two design principles drive this hook:
 2. **The brain fills itself with *distilled* knowledge.** On `Stop`, after
    writing the log, the hook returns a `block` decision that asks the agent
    to extract the durable bits of the conversation (decisions, preferences,
-   facts, reusable knowledge) into clean drawers — not the raw transcript.
+   facts, reusable knowledge) into clean concepts — not the raw transcript.
    This runs exactly once per session: the `stop_hook_active` flag in the
    payload guards against a loop (the second stop, after distillation, is
    allowed through).
@@ -48,7 +48,7 @@ saved in either case):
 - `SECONDBRAIN_LONG_SESSION_TURNS=20`   above this, the marker check is skipped
                                         (long sessions get distilled regardless)
 - `SECONDBRAIN_MAX_CANDIDATES=10`       max candidate lines surfaced to the agent
-                                        (the agent filters these into drawers)
+                                        (the agent filters these into concepts)
 """
 
 from __future__ import annotations

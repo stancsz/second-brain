@@ -3,7 +3,7 @@
 
 New model: logs stay as logs (plain files under ~/.secondbrain/logs/), the
 brain stays clean, and on Stop the hook asks the agent to distill durable
-knowledge into clean drawers. The hook must never raise and never wedge a
+knowledge into clean concepts. The hook must never raise and never wedge a
 session (always exits 0).
 """
 import json

@@ -5,6 +5,7 @@ Run with:  python -m unittest tests/test_brain.py
 or:        python tests/test_brain.py
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -34,7 +35,7 @@ class TestBrain(unittest.TestCase):
     # 1. Basic CRUD
     # -----------------------------------------------------------------------
 
-    def test_add_returns_drawer_with_correct_fields(self):
+    def test_add_returns_concept_with_correct_fields(self):
         dr = self.b.add("Alpha", "hello world", collection="notes", tags=["a", "b"])
         self.assertEqual(dr["title"], "Alpha")
         self.assertEqual(dr["content"], "hello world")
@@ -74,7 +75,7 @@ class TestBrain(unittest.TestCase):
         self.b.delete(dr["id"], hard=True)
         self.assertIsNone(self.b.get(dr["id"]))
         row = self.b.con.execute(
-            "SELECT 1 FROM drawers WHERE id=?", (dr["id"],)
+            "SELECT 1 FROM concepts WHERE id=?", (dr["id"],)
         ).fetchone()
         self.assertIsNone(row)
 
@@ -129,17 +130,17 @@ class TestBrain(unittest.TestCase):
         """Directly verify the FTS rowid is gone from the index after hard delete."""
         dr = self.b.add("TriggerCheck", "canary_word_for_ad_trigger")
         rowid = self.b.con.execute(
-            "SELECT rowid FROM drawers WHERE id=?", (dr["id"],)
+            "SELECT rowid FROM concepts WHERE id=?", (dr["id"],)
         ).fetchone()[0]
         self.b.delete(dr["id"], hard=True)
         # The FTS shadow table content should not contain the canary word anymore.
         fts_hit = self.b.con.execute(
-            "SELECT rowid FROM drawers_fts WHERE drawers_fts MATCH 'canary_word_for_ad_trigger'"
+            "SELECT rowid FROM concepts_fts WHERE concepts_fts MATCH 'canary_word_for_ad_trigger'"
         ).fetchall()
         self.assertEqual(len(fts_hit), 0)
 
     # -----------------------------------------------------------------------
-    # 4. Soft delete: drawer hidden; restore brings it back with wikilinks
+    # 4. Soft delete: concept hidden; restore brings it back with wikilinks
     # -----------------------------------------------------------------------
 
     def test_soft_delete_hidden_from_search(self):
@@ -157,7 +158,7 @@ class TestBrain(unittest.TestCase):
         ids = [d["id"] for d in listed]
         self.assertNotIn(dr["id"], ids)
 
-    def test_restore_brings_back_drawer(self):
+    def test_restore_brings_back_concept(self):
         dr = self.b.add("Resurrect", "I will return")
         self.b.delete(dr["id"])
         self.assertIsNone(self.b.get(dr["id"]))
@@ -168,7 +169,7 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(restored["title"], "Resurrect")
 
     def test_restore_rederives_wikilinks(self):
-        """After restoring a drawer that references another, the wikilink
+        """After restoring a concept that references another, the wikilink
         relation must be re-established."""
         target = self.b.add("RestoredTarget", "I am the target")
         src = self.b.add("RestoredSource", "See [[RestoredTarget]] for details")
@@ -182,7 +183,7 @@ class TestBrain(unittest.TestCase):
         rels_after = self.b.related(src["id"])
         self.assertTrue(any(r["id"] == target["id"] for r in rels_after))
 
-    def test_restore_returns_false_for_live_drawer(self):
+    def test_restore_returns_false_for_live_concept(self):
         dr = self.b.add("NeverDeleted", "alive")
         self.assertFalse(self.b.restore(dr["id"]))
 
@@ -221,12 +222,12 @@ class TestBrain(unittest.TestCase):
     # -----------------------------------------------------------------------
 
     def test_pending_link_created_for_unknown_target(self):
-        src = self.b.add("PendSource", "Mentions [[FutureDrawer]] which doesn't exist")
+        src = self.b.add("PendSource", "Mentions [[FutureConcept]] which doesn't exist")
         pending = self.b.con.execute(
             "SELECT * FROM pending_links WHERE from_id=?", (src["id"],)
         ).fetchall()
         self.assertEqual(len(pending), 1)
-        self.assertEqual(pending[0]["target_title"], "FutureDrawer")
+        self.assertEqual(pending[0]["target_title"], "FutureConcept")
 
     def test_pending_link_resolves_when_target_added(self):
         src = self.b.add("EarlySource", "Waiting for [[LateTarget]]")
@@ -250,7 +251,7 @@ class TestBrain(unittest.TestCase):
         self.assertTrue(any(r["id"] == target["id"] for r in rels))
 
     def test_pending_link_resolves_on_retitle(self):
-        """Renaming a drawer to match a pending link target resolves the link."""
+        """Renaming a concept to match a pending link target resolves the link."""
         src = self.b.add("WaitingSource", "Waiting for [[EventualName]]")
         existing = self.b.add("WorkingName", "I'll be renamed")
 
@@ -282,13 +283,13 @@ class TestBrain(unittest.TestCase):
     # 7. Archive atomicity
     # -----------------------------------------------------------------------
 
-    def test_archive_moves_old_drawer_to_archive_db(self):
+    def test_archive_moves_old_concept_to_archive_db(self):
         fresh = self.b.add("Fresh", "just added")
         cold = self.b.add("Cold", "very old content")
 
-        # Age the cold drawer past the threshold.
+        # Age the cold concept past the threshold.
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (cold["id"],),
         )
         self.b.con.commit()
@@ -296,17 +297,17 @@ class TestBrain(unittest.TestCase):
         archive_path = Path(self.tmpdir) / "archive.db"
         result = self.b.archive(str(archive_path), older_than_days=180)
 
-        # Cold drawer must be gone from the working brain.
+        # Cold concept must be gone from the working brain.
         self.assertIsNone(self.b.get(cold["id"]))
 
-        # Fresh drawer must remain.
+        # Fresh concept must remain.
         self.assertIsNotNone(self.b.get(fresh["id"]))
 
-        # Archive DB must contain the cold drawer.
+        # Archive DB must contain the cold concept.
         archive = SecondBrain(archive_path)
         try:
             archived_dr = archive.con.execute(
-                "SELECT * FROM drawers WHERE id=?", (cold["id"],)
+                "SELECT * FROM concepts WHERE id=?", (cold["id"],)
             ).fetchone()
             self.assertIsNotNone(archived_dr)
             self.assertEqual(archived_dr["title"], "Cold")
@@ -317,7 +318,7 @@ class TestBrain(unittest.TestCase):
         self.b.add("Keeper", "fresh note")
         cold = self.b.add("OldNote", "stale content")
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (cold["id"],),
         )
         self.b.con.commit()
@@ -331,11 +332,11 @@ class TestBrain(unittest.TestCase):
     # 8. Archive refuses-all protection
     # -----------------------------------------------------------------------
 
-    def test_archive_refuses_when_all_drawers_would_be_removed(self):
-        """archive() must raise ValueError if every alive drawer would be archived."""
-        only = self.b.add("OnlyDrawer", "all alone")
+    def test_archive_refuses_when_all_concepts_would_be_removed(self):
+        """archive() must raise ValueError if every alive concept would be archived."""
+        only = self.b.add("OnlyConcept", "all alone")
         self.b.con.execute(
-            "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+            "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
             (only["id"],),
         )
         self.b.con.commit()
@@ -344,12 +345,12 @@ class TestBrain(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.b.archive(str(archive_path), older_than_days=180)
 
-    def test_archive_refuses_multiple_drawers_all_old(self):
-        """Same protection with more than one drawer, all old."""
+    def test_archive_refuses_multiple_concepts_all_old(self):
+        """Same protection with more than one concept, all old."""
         for i in range(3):
             dr = self.b.add(f"OldNote{i}", f"content {i}")
             self.b.con.execute(
-                "UPDATE drawers SET updated_at=datetime('now','-200 days') WHERE id=?",
+                "UPDATE concepts SET updated_at=datetime('now','-200 days') WHERE id=?",
                 (dr["id"],),
             )
         self.b.con.commit()
@@ -398,7 +399,7 @@ class TestBrain(unittest.TestCase):
         self.assertNotIn("NotInColl", md)
 
     # -----------------------------------------------------------------------
-    # 10. export_vault writes one .md file per drawer
+    # 10. export_vault writes one .md file per concept
     # -----------------------------------------------------------------------
 
     def test_export_vault_creates_directory(self):
@@ -409,8 +410,8 @@ class TestBrain(unittest.TestCase):
         self.assertTrue(vault_dir.exists())
         self.assertTrue(vault_dir.is_dir())
 
-    def test_export_vault_one_file_per_drawer(self):
-        drawers = [
+    def test_export_vault_one_file_per_concept(self):
+        concepts = [
             self.b.add(f"VaultNote{i}", f"body {i}") for i in range(3)
         ]
         vault_dir = Path(self.tmpdir) / "vault_files"
@@ -444,7 +445,7 @@ class TestBrain(unittest.TestCase):
         vault_dir = Path(self.tmpdir) / "vault_del"
         self.b.export_vault(str(vault_dir))
         md_files = list(vault_dir.glob("*.md"))
-        # Only the live drawer should appear.
+        # Only the live concept should appear.
         all_text = "".join(f.read_text() for f in md_files)
         self.assertIn("LiveVault", all_text)
         self.assertNotIn("DeadVault", all_text)
@@ -530,7 +531,7 @@ class TestBrain(unittest.TestCase):
         finally:
             b2.close()
 
-    def test_vault_roundtrip_multiple_drawers(self):
+    def test_vault_roundtrip_multiple_concepts(self):
         ids = []
         for i in range(5):
             dr = self.b.add(f"Multi{i}", f"body {i}", tags=[f"tag{i}"])
@@ -555,7 +556,7 @@ class TestBrain(unittest.TestCase):
         vault_dir = Path(self.tmpdir) / "vault_merge_skip"
         self.b.export_vault(str(vault_dir))
 
-        # Import into a brain that already has the same drawer.
+        # Import into a brain that already has the same concept.
         db2_path = Path(self.tmpdir) / "brain2_merge.db"
         b2 = SecondBrain(db2_path)
         try:
@@ -572,9 +573,9 @@ class TestBrain(unittest.TestCase):
     # 12. import_ from JSON (existing behavior)
     # -----------------------------------------------------------------------
 
-    def test_import_json_adds_drawers(self):
+    def test_import_json_adds_concepts(self):
         import json, tempfile as _tf
-        drawers_data = [
+        concepts_data = [
             {
                 "id": "aabbcc001",
                 "title": "JSONImported",
@@ -588,7 +589,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         result = self.b.import_(json_path, mode="merge")
@@ -605,7 +606,7 @@ class TestBrain(unittest.TestCase):
     def test_import_json_merge_skips_existing(self):
         import json, tempfile as _tf
         dr = self.b.add("PreExisting", "already here")
-        drawers_data = [
+        concepts_data = [
             {
                 "id": dr["id"],
                 "title": "PreExisting",
@@ -619,7 +620,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         result = self.b.import_(json_path, mode="merge")
@@ -629,7 +630,7 @@ class TestBrain(unittest.TestCase):
     def test_import_json_replace_overwrites(self):
         import json, tempfile as _tf
         dr = self.b.add("ToOverwrite", "original")
-        drawers_data = [
+        concepts_data = [
             {
                 "id": dr["id"],
                 "title": "ToOverwrite",
@@ -643,7 +644,7 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         self.b.import_(json_path, mode="replace")
@@ -652,12 +653,12 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(fetched["content"], "replaced content")
 
     def test_import_json_resolves_wikilinks_after_bulk(self):
-        """After a JSON import the cross-refs between the imported drawers
+        """After a JSON import the cross-refs between the imported concepts
         should be resolved (wikilinks re-synced over the full set)."""
         import json, tempfile as _tf
         id_a = "wljson_aaa"
         id_b = "wljson_bbb"
-        drawers_data = [
+        concepts_data = [
             {
                 "id": id_a,
                 "title": "JSONNoteA",
@@ -680,12 +681,396 @@ class TestBrain(unittest.TestCase):
         with _tf.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, dir=self.tmpdir
         ) as f:
-            json.dump(drawers_data, f)
+            json.dump(concepts_data, f)
             json_path = f.name
 
         self.b.import_(json_path, mode="merge")
         rels = self.b.related(id_a)
         self.assertTrue(any(r["id"] == id_b for r in rels))
+
+    # -----------------------------------------------------------------------
+    # 8. Subjects (G08 / R10)
+    # -----------------------------------------------------------------------
+
+    def test_subject_index_populated_on_add(self):
+        """live add() registers the default /people/self.md subject even
+        when no sb_subject is passed."""
+        dr = self.b.add("Title", "body", collection="notes")
+        rows = self.b.con.execute(
+            "SELECT subject_id FROM concept_subject WHERE concept_id=?", (dr["id"],)
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["subject_id"], "/people/self.md")
+
+    def test_subject_subgraph_returns_only_subject_concepts(self):
+        """subject_subgraph(path) returns exactly the concepts linked to
+        that subject — no leakage from other subjects."""
+        # Three concepts about rox, one about alex, one with default
+        self.b.add("R1", "r1 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("R2", "r2 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("R3", "r3 body", collection="traits",
+                   sb_subject="/people/rox.md")
+        self.b.add("A1", "a1 body", collection="traits",
+                   sb_subject="/people/alex.md")
+        self.b.add("Mine", "my body", collection="notes")  # default self
+        rox = self.b.subject_subgraph("/people/rox.md")
+        self.assertEqual(sorted(c["title"] for c in rox), ["R1", "R2", "R3"])
+        alex = self.b.subject_subgraph("/people/alex.md")
+        self.assertEqual([c["title"] for c in alex], ["A1"])
+        # No leakage
+        for c in rox:
+            self.assertNotIn(c["title"], ("A1", "Mine"))
+
+    def test_subject_subgraph_default_is_self(self):
+        """A concept with no sb_subject is reachable via /people/self.md."""
+        self.b.add("Lunch", "ate sandwich", collection="notes")
+        mine = self.b.subject_subgraph("/people/self.md")
+        self.assertEqual([c["title"] for c in mine], ["Lunch"])
+
+    def test_subject_subgraph_unknown_returns_empty(self):
+        """subject_subgraph(unknown) returns [] not raise."""
+        self.b.add("A", "a", collection="notes")
+        self.assertEqual(self.b.subject_subgraph("/people/ghost.md"), [])
+
+    def test_subject_change_via_update(self):
+        """update(id, sb_subject=X) re-links the concept to the new subject."""
+        dr = self.b.add("X", "body", collection="notes",
+                        sb_subject="/people/rox.md")
+        self.assertEqual(
+            self.b.con.execute(
+                "SELECT subject_id FROM concept_subject WHERE concept_id=?",
+                (dr["id"],)).fetchone()["subject_id"],
+            "/people/rox.md",
+        )
+        self.b.update(dr["id"], sb_subject="/people/alex.md")
+        row = self.b.con.execute(
+            "SELECT subject_id FROM concept_subject WHERE concept_id=?",
+            (dr["id"],)).fetchone()
+        self.assertEqual(row["subject_id"], "/people/alex.md")
+
+    def test_subjects_lists_known_subjects(self):
+        """subjects() returns all distinct subjects with their concept count."""
+        self.b.add("R1", "r1", collection="notes", sb_subject="/people/rox.md")
+        self.b.add("R2", "r2", collection="notes", sb_subject="/people/rox.md")
+        self.b.add("A1", "a1", collection="notes", sb_subject="/people/alex.md")
+        self.b.add("M1", "m1", collection="notes")  # default
+        subs = {s["sb_id"]: s["concept_count"] for s in self.b.subjects()}
+        self.assertEqual(subs["/people/self.md"], 1)
+        self.assertEqual(subs["/people/rox.md"], 2)
+        self.assertEqual(subs["/people/alex.md"], 1)
+
+    # -----------------------------------------------------------------------
+    # Structured affect (G10 / R12)
+    # -----------------------------------------------------------------------
+
+    def test_affect_persists_and_reads_back(self):
+        """add(sb_affect=...) stores a typed affect row; affect(id) returns it."""
+        dr = self.b.add("Grief", "the funeral", collection="episodes",
+                        sb_affect={"valence": -0.8, "arousal": 0.3,
+                                   "emotion": "grief", "intensity": 0.9})
+        self.assertEqual(
+            self.b.affect(dr["id"]),
+            {"valence": -0.8, "arousal": 0.3, "emotion": "grief", "intensity": 0.9})
+
+    def test_affect_absent_returns_none_and_no_row(self):
+        """A concept without sb_affect has no affect row and affect(id) is None."""
+        dr = self.b.add("Plain", "no feelings here", collection="notes")
+        self.assertIsNone(self.b.affect(dr["id"]))
+        row = self.b.con.execute(
+            "SELECT 1 FROM affect WHERE concept_id=?", (dr["id"],)).fetchone()
+        self.assertIsNone(row)
+
+    def test_affect_partial_keeps_null_dims(self):
+        """Emotion-only affect stores the label with numeric dims left NULL."""
+        dr = self.b.add("Curious", "what's that?", collection="notes",
+                        sb_affect={"emotion": "curiosity"})
+        a = self.b.affect(dr["id"])
+        self.assertEqual(a["emotion"], "curiosity")
+        self.assertIsNone(a["valence"])
+        self.assertIsNone(a["intensity"])
+
+    def test_recall_by_affect_emotion_and_range(self):
+        """recall_by_affect answers categorical + numeric-range queries exactly."""
+        self.b.add("G1", "b", collection="e",
+                   sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9})
+        self.b.add("G2", "b", collection="e",
+                   sb_affect={"emotion": "grief", "valence": -0.6, "intensity": 0.6})
+        self.b.add("J1", "b", collection="e",
+                   sb_affect={"emotion": "joy", "valence": 0.9, "intensity": 0.85})
+        self.assertEqual(
+            sorted(c["title"] for c in self.b.recall_by_affect(emotion="grief")),
+            ["G1", "G2"])
+        self.assertEqual(
+            sorted(c["title"] for c in self.b.recall_by_affect(min_intensity=0.8)),
+            ["G1", "J1"])
+        self.assertEqual(
+            [c["title"] for c in self.b.recall_by_affect(emotion="grief",
+                                                         min_intensity=0.8)],
+            ["G1"])
+
+    def test_recall_by_affect_null_dim_excluded_from_range(self):
+        """A partial-affect row (NULL intensity) never satisfies a numeric bound."""
+        self.b.add("Partial", "b", collection="e", sb_affect={"emotion": "awe"})
+        self.assertEqual(self.b.recall_by_affect(min_intensity=0.0), [])
+
+    def test_update_sets_and_clears_affect(self):
+        """update(sb_affect=...) sets affect; update(sb_affect=None) clears it;
+        omitting sb_affect preserves it."""
+        dr = self.b.add("E", "b", collection="e",
+                        sb_affect={"emotion": "joy", "intensity": 0.6})
+        # preserve on unrelated update
+        self.b.update(dr["id"], title="E2")
+        self.assertEqual(self.b.affect(dr["id"])["emotion"], "joy")
+        # change
+        self.b.update(dr["id"], sb_affect={"emotion": "calm", "intensity": 0.2})
+        self.assertEqual(self.b.affect(dr["id"])["emotion"], "calm")
+        # clear
+        self.b.update(dr["id"], sb_affect=None)
+        self.assertIsNone(self.b.affect(dr["id"]))
+
+    def test_affect_fk_cascade_on_hard_delete(self):
+        """Hard-deleting a concept removes its affect row (ON DELETE CASCADE)."""
+        dr = self.b.add("Doomed", "b", collection="e",
+                        sb_affect={"emotion": "dread", "intensity": 0.7})
+        self.b.con.execute("DELETE FROM concepts WHERE id=?", (dr["id"],))
+        self.b.con.commit()
+        self.assertIsNone(self.b.con.execute(
+            "SELECT 1 FROM affect WHERE concept_id=?", (dr["id"],)).fetchone())
+
+    # -----------------------------------------------------------------------
+    # Bi-temporal validity (G09 / R11 M1)
+    # -----------------------------------------------------------------------
+
+    def test_validity_persists_and_reads_back(self):
+        """add(sb_valid_from/to=...) stores a typed validity row."""
+        dr = self.b.add("Lived in NYC", "Brooklyn", collection="facts",
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-06-01")
+        self.assertEqual(
+            self.b.validity(dr["id"]),
+            {"valid_from": "2020-01-01", "valid_to": "2023-06-01", "supersedes": None})
+
+    def test_validity_absent_returns_none(self):
+        """A concept without temporal fields has no validity row."""
+        dr = self.b.add("Timeless", "always", collection="facts")
+        self.assertIsNone(self.b.validity(dr["id"]))
+
+    def test_validity_partial_window(self):
+        """valid_from alone persists with valid_to NULL."""
+        dr = self.b.add("Open", "ongoing", collection="facts",
+                        sb_valid_from="2024-01-15")
+        v = self.b.validity(dr["id"])
+        self.assertEqual(v["valid_from"], "2024-01-15")
+        self.assertIsNone(v["valid_to"])
+
+    def test_supersede_closes_old_and_links_new_preserving_history(self):
+        """supersede() closes the old window, links the new fact, keeps history."""
+        old = self.b.add("Lives in NYC", "Brooklyn", collection="facts",
+                         sb_valid_from="2020-01-01")
+        new = self.b.supersede(old["id"], "Lives in SF", "Mission",
+                               collection="facts", as_of="2023-06-01")
+        # old window closed at as_of, old still exists
+        self.assertEqual(self.b.validity(old["id"])["valid_to"], "2023-06-01")
+        self.assertIsNotNone(self.b.get(old["id"]))
+        # new fact links back and opens at as_of
+        vnew = self.b.validity(new["id"])
+        self.assertEqual(vnew["supersedes"], old["id"])
+        self.assertEqual(vnew["valid_from"], "2023-06-01")
+
+    def test_supersede_unknown_raises(self):
+        """supersede() on a missing concept raises a clear error."""
+        with self.assertRaises(ValueError):
+            self.b.supersede("nonexistent-id", "X", "y", collection="facts")
+
+    def test_update_sets_and_clears_validity(self):
+        """update() sets and fully clears the validity window."""
+        dr = self.b.add("Job", "gig", collection="facts", sb_valid_from="2024-01-01")
+        self.b.update(dr["id"], sb_valid_to="2024-12-31")
+        self.assertEqual(self.b.validity(dr["id"])["valid_to"], "2024-12-31")
+        self.b.update(dr["id"], sb_valid_from=None, sb_valid_to=None)
+        self.assertIsNone(self.b.validity(dr["id"]))
+
+    def test_validity_fk_cascade_on_hard_delete(self):
+        """Hard-deleting a concept removes its validity row (ON DELETE CASCADE)."""
+        dr = self.b.add("Doomed", "b", collection="facts", sb_valid_from="2024-01-01")
+        self.b.con.execute("DELETE FROM concepts WHERE id=?", (dr["id"],))
+        self.b.con.commit()
+        self.assertIsNone(self.b.con.execute(
+            "SELECT 1 FROM validity WHERE concept_id=?", (dr["id"],)).fetchone())
+
+    # -- recall_as_of (G09 M2 / R11) -----------------------------------------
+
+    def test_recall_as_of_timeless_note_returned(self):
+        """A timeless concept (no validity row) is returned for any as_of date."""
+        dr = self.b.add("Timeless", "always true")
+        hits = self.b.recall_as_of("2000-01-01")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_timeless_future(self):
+        """A timeless concept is returned for a far-future as_of."""
+        dr = self.b.add("Timeless future", "still here")
+        hits = self.b.recall_as_of("2099-12-31")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_window_included(self):
+        """Concept with valid_from <= as_of and no valid_to is returned."""
+        dr = self.b.add("Bounded", "started 2020", sb_valid_from="2020-01-01")
+        hits = self.b.recall_as_of("2022-06-15")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_before_valid_from_excluded(self):
+        """Concept not yet valid at as_of is excluded."""
+        dr = self.b.add("Future fact", "not yet true", sb_valid_from="2025-01-01")
+        hits = self.b.recall_as_of("2024-01-01")
+        self.assertNotIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_expired_excluded(self):
+        """Concept whose valid_to is before or equal to as_of is excluded."""
+        dr = self.b.add("Expired", "old fact", sb_valid_from="2010-01-01", sb_valid_to="2015-01-01")
+        hits = self.b.recall_as_of("2020-01-01")
+        self.assertNotIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_exclusive_valid_to_boundary(self):
+        """valid_to is exclusive: as_of == valid_to means EXCLUDED."""
+        dr = self.b.add("Boundary fact", "edge case",
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
+        # Just inside: should be included
+        self.assertIn(dr["id"],
+                      [h["id"] for h in self.b.recall_as_of("2022-12-31")])
+        # On the boundary: should be excluded
+        self.assertNotIn(dr["id"],
+                         [h["id"] for h in self.b.recall_as_of("2023-01-01")])
+
+    def test_recall_as_of_nyc_sf_supersession(self):
+        """NYC→SF supersession: as-of in each window returns the right fact."""
+        nyc = self.b.add("City", "New York City", sb_valid_from="2015-01-01")
+        sf = self.b.supersede(nyc["id"], "City", "San Francisco", as_of="2023-09-01")
+
+        in_nyc = [h["id"] for h in self.b.recall_as_of("2020-01-01")]
+        self.assertIn(nyc["id"], in_nyc)
+        self.assertNotIn(sf["id"], in_nyc)
+
+        in_sf = [h["id"] for h in self.b.recall_as_of("2024-01-01")]
+        self.assertIn(sf["id"], in_sf)
+        self.assertNotIn(nyc["id"], in_sf)
+
+    # -- ISO date validation (G26) -------------------------------------------
+
+    def test_add_rejects_malformed_valid_from(self):
+        for bad in ("June 2023", "2023/06/01", "2023-13-01", "2023-02-30", "tomorrow"):
+            with self.assertRaises(ValueError, msg=f"{bad!r} should raise"):
+                self.b.add("X", "y", sb_valid_from=bad)
+
+    def test_add_rejects_malformed_valid_to(self):
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_to="not-a-date")
+
+    def test_add_accepts_iso_date_datetime_and_leap(self):
+        for good in ("2023-01-01", "2024-02-29", "2023-06-15T12:30:00"):
+            dr = self.b.add(f"Good {good}", "y", sb_valid_from=good)
+            self.assertEqual(self.b.validity(dr["id"])["valid_from"], good)
+
+    def test_update_rejects_malformed_date(self):
+        dr = self.b.add("Mutable", "body")
+        with self.assertRaises(ValueError):
+            self.b.update(dr["id"], sb_valid_from="June 2023")
+
+    def test_supersede_rejects_malformed_as_of(self):
+        old = self.b.add("Old", "v1", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.supersede(old["id"], "New", "v2", as_of="not-a-date")
+
+    def test_rebuild_quarantines_bad_date_keeps_good(self):
+        """A malformed date already in metadata is quarantined on rebuild; the
+        rest of the index builds intact and the rebuild does not crash."""
+        good = self.b.add("Good", "g", sb_valid_from="2021-01-01")
+        bad = self.b.add("Bad", "b")
+        self.b.con.execute(
+            "UPDATE concepts SET metadata=? WHERE id=?",
+            (json.dumps({"sb_valid_from": "garbage"}), bad["id"]))
+        self.b.con.commit()
+        n = self.b.rebuild_validity_index()  # must not raise
+        self.assertIsNotNone(self.b.validity(good["id"]))
+        self.assertIsNone(self.b.validity(bad["id"]))
+
+    # -- restore recovers psych dims (G27) -----------------------------------
+
+    def test_restore_recovers_psych_dims_after_rebuild(self):
+        """A soft-deleted concept carried through bundle.rebuild loses its psych
+        rows; restore() must recover affect/subject/validity from metadata."""
+        import bundle
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            b1 = SecondBrain(tmp / "b1.db")
+            dr = b1.add("Mem", "body", sb_subject="/people/alex.md",
+                        sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9},
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
+            cid = dr["id"]
+            b1.delete(cid)
+            bundle.export(b1, str(tmp / "okf"))
+            b1.close()
+            b2 = bundle.rebuild(str(tmp / "okf"), str(tmp / "b2.db"))
+            try:
+                # bug precondition: psych rows dropped by rebuild
+                self.assertIsNone(b2.affect(cid))
+                self.assertIsNone(b2.validity(cid))
+                # the fix
+                b2.restore(cid)
+                self.assertEqual(b2.affect(cid)["emotion"], "grief")
+                self.assertEqual(b2.affect(cid)["intensity"], 0.9)
+                self.assertEqual(b2.validity(cid)["valid_from"], "2020-01-01")
+                self.assertTrue(any(c["id"] == cid
+                                    for c in b2.subject_subgraph("/people/alex.md")))
+            finally:
+                b2.close()
+
+    def test_restore_plain_note_no_spurious_psych_rows(self):
+        plain = self.b.add("Plain", "no psych dims")
+        self.b.delete(plain["id"])
+        self.assertTrue(self.b.restore(plain["id"]))
+        self.assertIsNone(self.b.affect(plain["id"]))
+        self.assertIsNone(self.b.validity(plain["id"]))
+
+    # -- window coherence (G32) ----------------------------------------------
+
+    def test_add_rejects_backwards_window(self):
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_from="2025-01-01", sb_valid_to="2020-01-01")
+
+    def test_add_rejects_backwards_window_mixed_forms(self):
+        # datetime after a bare date on the same day is still backwards
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_from="2023-06-01T12:00:00",
+                       sb_valid_to="2023-06-01")
+
+    def test_update_rejects_valid_to_before_existing_valid_from(self):
+        dr = self.b.add("F", "y", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.update(dr["id"], sb_valid_to="2019-01-01")
+
+    def test_supersede_rejects_as_of_before_old_valid_from(self):
+        old = self.b.add("Old", "v1", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.supersede(old["id"], "New", "v2", as_of="2015-01-01")
+
+    def test_equal_bounds_and_partial_windows_accepted(self):
+        eq = self.b.add("Eq", "y", sb_valid_from="2022-05-05", sb_valid_to="2022-05-05")
+        self.assertIsNotNone(self.b.validity(eq["id"]))
+        fo = self.b.add("FromOnly", "y", sb_valid_from="2020-01-01")
+        self.assertEqual(self.b.validity(fo["id"])["valid_from"], "2020-01-01")
+
+    def test_rebuild_quarantines_backwards_window(self):
+        good = self.b.add("Good", "g", sb_valid_from="2021-01-01", sb_valid_to="2022-01-01")
+        bad = self.b.add("Bad", "b")
+        self.b.con.execute(
+            "UPDATE concepts SET metadata=? WHERE id=?",
+            (json.dumps({"sb_valid_from": "2025-01-01", "sb_valid_to": "2020-01-01"}),
+             bad["id"]))
+        self.b.con.commit()
+        self.b.rebuild_validity_index()  # must not raise
+        self.assertIsNotNone(self.b.validity(good["id"]))
+        self.assertIsNone(self.b.validity(bad["id"]))
 
 
 if __name__ == "__main__":

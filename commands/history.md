@@ -8,7 +8,7 @@ Show the user a list of their saved conversation **logs**, then open the one
 they pick. This is a slash command — the body below is the prompt Claude Code
 sees when the user types `/history`.
 
-> Conversation logs are plain files, not brain drawers. The brain (`brain.db`)
+> Conversation logs are plain files, not brain concepts. The brain (`brain.db`)
 > holds only distilled knowledge; the full raw transcripts live on disk under
 > `~/.secondbrain/logs/YYYY/MM/`. This command browses those files.
 
@@ -41,7 +41,7 @@ sees when the user types `/history`.
 
 5. **Offer follow-ups.** After showing the conversation, ask if they want to:
    - **Distill it into the brain** — extract durable decisions/facts/preferences
-     as clean drawers with `brain add ...`. (The Stop hook used to nudge
+     as clean concepts with `brain add ...`. (The Stop hook used to nudge
      this automatically; now it's a manual step you can run any time.)
    - Search across logs (`grep -l "<term>" ~/.secondbrain/logs/*/*/*.jsonl`).
    - Summarize a slice.

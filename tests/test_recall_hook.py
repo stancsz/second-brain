@@ -80,7 +80,7 @@ class TestRecall(unittest.TestCase):
               collection="Conversations", tags=["auto-capture"])
         b.close()
 
-    def test_recalls_relevant_drawer(self):
+    def test_recalls_relevant_concept(self):
         out = recall._recall("checkout timeout problem", self.db, limit=5)
         titles = [d["title"] for d in out]
         self.assertIn("Checkout service timeout fix", titles)

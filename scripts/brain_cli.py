@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """CLI for SecondBrain. Each subcommand maps to one /brain-* command.
 
 Usage:
@@ -45,7 +45,25 @@ def _short(s, n=120):
     return s[:n] + ("..." if len(s) > n else "")
 
 
-def _fmt_drawer_line(i, d):
+def _parse_affect_arg(raw):
+    """Parse the --affect JSON string. "" / None → None (clear/omit). A non-empty
+    value must be a JSON object; on bad input, exit with an actionable message
+    instead of a stack trace."""
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+    except json.JSONDecodeError as ex:
+        sys.exit('--affect must be valid JSON, e.g. '
+                 '\'{"emotion":"grief","valence":-0.8,"intensity":0.9}\' '
+                 f'(got: {ex})')
+    if not isinstance(val, dict):
+        sys.exit('--affect must be a JSON object of affect dimensions '
+                 '(valence/arousal/emotion/intensity)')
+    return val
+
+
+def _fmt_concept_line(i, d):
     tags = f" [{', '.join(d['tags'])}]" if d["tags"] else ""
     coll = f" [{d['collection']}]" if d["collection"] else ""
     return (f"{i}. {d['title']}{coll}{tags}\n"
@@ -61,14 +79,42 @@ def main():
     a = sub.add_parser("add"); a.add_argument("title"); a.add_argument("content", nargs="?")
     a.add_argument("--content-file", help="read content from this file (avoids shell escaping for long content)")
     a.add_argument("--collection"); a.add_argument("--tags"); a.add_argument("--source", action="append")
+    a.add_argument("--subject", help="sb_subject: the Bundle path this memory is about (e.g. /people/rox.md). Defaults to /people/self.md.")
+    a.add_argument("--affect", help='sb_affect as JSON, e.g. \'{"emotion":"grief","valence":-0.8,"arousal":0.3,"intensity":0.9}\' (any subset of dims)')
+    a.add_argument("--valid-from", help="sb_valid_from: ISO date this fact became true (e.g. 2024-01-15)")
+    a.add_argument("--valid-to", help="sb_valid_to: ISO date this fact stopped being true (open if omitted)")
+    a.add_argument("--supersedes", help="sb_supersedes: id of the Concept this fact replaces")
 
     s = sub.add_parser("search"); s.add_argument("query")
     s.add_argument("--collection"); s.add_argument("--tag"); s.add_argument("--limit", type=int, default=10)
 
     sh = sub.add_parser("show"); sh.add_argument("ident")
 
+    rs_sub = sub.add_parser("recall-subject")
+    rs_sub.add_argument("subject", help="the subject path (e.g. /people/rox.md) or display name (e.g. rox)")
+    rs_sub.add_argument("--limit", type=int, default=50)
+
+    rec = sub.add_parser("recall", help="point-in-time recall: return facts valid at a given date")
+    rec.add_argument("--as-of", required=True, metavar="DATE",
+                     help="ISO date (e.g. 2023-06-01) — return only facts whose validity window contains this date")
+    rec.add_argument("query", nargs="?", default=None, help="optional FTS query to narrow results")
+    rec.add_argument("--collection", help="restrict to one collection")
+    rec.add_argument("--limit", type=int, default=50)
+
+    ra = sub.add_parser("recall-affect", help="recall memories by structured affect (emotion / valence / arousal / intensity)")
+    ra.add_argument("--emotion", help="exact emotion label (case-insensitive), e.g. grief")
+    ra.add_argument("--min-valence", type=float); ra.add_argument("--max-valence", type=float)
+    ra.add_argument("--min-arousal", type=float); ra.add_argument("--max-arousal", type=float)
+    ra.add_argument("--min-intensity", type=float)
+    ra.add_argument("--limit", type=int, default=50)
+
     u = sub.add_parser("update"); u.add_argument("id")
     u.add_argument("--title"); u.add_argument("--content"); u.add_argument("--tags"); u.add_argument("--collection")
+    u.add_argument("--subject", help='set sb_subject (pass "" to clear, back to /people/self.md)')
+    u.add_argument("--affect", help='set sb_affect JSON (pass "" to clear)')
+    u.add_argument("--valid-from", help='set sb_valid_from ISO date (pass "" to clear)')
+    u.add_argument("--valid-to", help='set sb_valid_to ISO date (pass "" to clear)')
+    u.add_argument("--supersedes", help='set sb_supersedes id (pass "" to clear)')
 
     d = sub.add_parser("delete"); d.add_argument("id"); d.add_argument("--hard", action="store_true")
     r = sub.add_parser("restore"); r.add_argument("id")
@@ -99,15 +145,15 @@ def main():
 
     sm = sub.add_parser("summary")
     sm.add_argument("--cold-days", type=int, default=180,
-                    help="threshold (days) for a drawer to count as 'cold'")
+                    help="threshold (days) for a concept to count as 'cold'")
 
     di = sub.add_parser("distill")
     di.add_argument("--output", required=True, help="path for the new distilled brain.db")
-    di.add_argument("--tag", action="append", help="drawer must have this tag (repeatable)")
-    di.add_argument("--collection", help="drawer must be in this collection")
-    di.add_argument("--query", help="FTS query the drawer must match")
-    di.add_argument("--since", help="drawer updated_at >= this ISO date")
-    di.add_argument("--until", help="drawer updated_at <= this ISO date")
+    di.add_argument("--tag", action="append", help="concept must have this tag (repeatable)")
+    di.add_argument("--collection", help="concept must be in this collection")
+    di.add_argument("--query", help="FTS query the concept must match")
+    di.add_argument("--since", help="concept updated_at >= this ISO date")
+    di.add_argument("--until", help="concept updated_at <= this ISO date")
     di.add_argument("--include-related-depth", type=int, default=0,
                     help="expand matches by N hops via the relations graph")
     di.add_argument("--activate", action="store_true",
@@ -117,15 +163,15 @@ def main():
     ar = sub.add_parser("archive")
     ar.add_argument("--output", required=True, help="path for the archive brain.db")
     ar.add_argument("--older-than-days", type=int, default=180,
-                    help="archive drawers untouched for at least N days (default 180)")
-    ar.add_argument("--before", help="archive drawers with updated_at <= this ISO date")
-    ar.add_argument("--tag", action="append", help="archive drawers with this tag (repeatable)")
-    ar.add_argument("--collection", help="archive drawers in this collection")
+                    help="archive concepts untouched for at least N days (default 180)")
+    ar.add_argument("--before", help="archive concepts with updated_at <= this ISO date")
+    ar.add_argument("--tag", action="append", help="archive concepts with this tag (repeatable)")
+    ar.add_argument("--collection", help="archive concepts in this collection")
     ar.add_argument("--dry-run", action="store_true", help="show counts without writing")
 
     mb = sub.add_parser("merge-brain")
     mb.add_argument("--from", dest="source", required=True,
-                    help="path to a brain.db whose drawers will be merged into the working brain")
+                    help="path to a brain.db whose concepts will be merged into the working brain")
 
     args = p.parse_args()
     b = SecondBrain(args.db) if args.db else SecondBrain()
@@ -142,86 +188,161 @@ def main():
                 content = Path(args.content_file).read_text(encoding="utf-8")
             else:
                 if args.content is None:
-                    sys.exit("❌ add needs either a content argument or --content-file")
+                    sys.exit("âŒ add needs either a content argument or --content-file")
                 content = args.content
             tags = [x.strip() for x in (args.tags or "").split(",") if x.strip()]
-            dr = b.add(args.title, content, args.collection, tags, args.source or [])
+            affect = _parse_affect_arg(args.affect)
+            dr = b.add(args.title, content, args.collection, tags, args.source or [],
+                       sb_subject=args.subject, sb_affect=affect,
+                       sb_valid_from=args.valid_from, sb_valid_to=args.valid_to,
+                       sb_supersedes=args.supersedes)
             links = b.related(dr["id"], source="wikilink")
-            msg = f"✅ Saved \"{dr['title']}\"  {dr['id'][:8]}"
+            msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
             if links:
-                msg += "\n   → linked: " + ", ".join(x["title"] for x in links)
+                msg += "\n   â†’ linked: " + ", ".join(x["title"] for x in links)
             pend = [pl for pl in b.con.execute(
                 "SELECT target_title FROM pending_links WHERE from_id=?", (dr["id"],))]
             if pend:
-                msg += "\n   ⏳ pending: " + ", ".join(x[0] for x in pend)
+                msg += "\n   â³ pending: " + ", ".join(x[0] for x in pend)
             out(dr, msg)
 
         elif args.cmd == "search":
             res = b.search(args.query, args.collection, args.tag, args.limit)
-            human = f"📚 {len(res)} results\n\n" + "\n\n".join(
-                _fmt_drawer_line(i + 1, d) for i, d in enumerate(res)) if res \
+            human = f"ðŸ“š {len(res)} results\n\n" + "\n\n".join(
+                _fmt_concept_line(i + 1, d) for i, d in enumerate(res)) if res \
                 else "No results. Try broader terms or check the collection/tag filter."
             out(res, human)
+
+        elif args.cmd == "recall-subject":
+            # Accept either a full path (/people/rox.md) or a display name
+            # (e.g. "rox"). If the input doesn't start with '/', try to
+            # resolve via the subjects table.
+            sub_in = args.subject
+            if not sub_in.startswith("/"):
+                match = b.con.execute(
+                    "SELECT sb_id FROM subjects WHERE slug = ? OR display_name = ?",
+                    (sub_in.lower(), sub_in),
+                ).fetchone()
+                if match:
+                    sub_in = match["sb_id"]
+            res = b.subject_subgraph(sub_in)[:args.limit]
+            if not res:
+                # Maybe the user is asking for the "self" default
+                if sub_in in ("self", "me"):
+                    sub_in = b.DEFAULT_SUBJECT_PATH
+                    res = b.subject_subgraph(sub_in)[:args.limit]
+            human = (f"🧠 subject sub-graph: {sub_in} ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts for subject '{sub_in}'."
+            out({"subject": sub_in, "concepts": res}, human)
+
+        elif args.cmd == "recall":
+            res = b.recall_as_of(args.as_of, query=args.query,
+                                 collection=args.collection, limit=args.limit)
+            header = f"⏳ as-of {args.as_of}"
+            if args.query:
+                header += f"  query={args.query!r}"
+            human = (f"{header}  ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts valid at {args.as_of}."
+            out({"as_of": args.as_of, "query": args.query, "concepts": res}, human)
+
+        elif args.cmd == "recall-affect":
+            res = b.recall_by_affect(
+                emotion=args.emotion,
+                min_valence=args.min_valence, max_valence=args.max_valence,
+                min_arousal=args.min_arousal, max_arousal=args.max_arousal,
+                min_intensity=args.min_intensity, limit=args.limit)
+            filt = {k: v for k, v in {
+                "emotion": args.emotion, "min_valence": args.min_valence,
+                "max_valence": args.max_valence, "min_arousal": args.min_arousal,
+                "max_arousal": args.max_arousal, "min_intensity": args.min_intensity,
+            }.items() if v is not None}
+            human = (f"🎭 affect recall {filt} ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts match affect filter {filt or '(none)'}."
+            out({"filters": filt, "concepts": res}, human)
 
         elif args.cmd == "show":
             matches = [b.get(args.ident)] if b.get(args.ident) else b.get_by_title(args.ident)
             matches = [m for m in matches if m]
             if not matches:
-                out(None, f"No live drawer matches '{args.ident}'.")
+                out(None, f"No live concept matches '{args.ident}'.")
             elif len(matches) > 1:
-                human = f"⚠️ {len(matches)} drawers match '{args.ident}':\n\n" + "\n\n".join(
-                    _fmt_drawer_line(i + 1, d) for i, d in enumerate(matches)) + \
+                human = f"âš ï¸ {len(matches)} concepts match '{args.ident}':\n\n" + "\n\n".join(
+                    _fmt_concept_line(i + 1, d) for i, d in enumerate(matches)) + \
                     "\n\nRe-run with the 8-char id to pick one."
                 out(matches, human)
             else:
                 dd = matches[0]
                 rels = b.related(dd["id"])
                 human = (f"# {dd['title']}\n"
-                         f"Collection: {dd['collection'] or '(none)'}   Tags: {', '.join(dd['tags']) or '—'}\n"
-                         f"Sources: {', '.join(dd['sources']) or '—'}\n"
+                         f"Collection: {dd['collection'] or '(none)'}   Tags: {', '.join(dd['tags']) or 'â€”'}\n"
+                         f"Sources: {', '.join(dd['sources']) or 'â€”'}\n"
                          f"Updated: {dd['updated_at']}   ID: {dd['id']}\n\n{dd['content']}\n")
+                aff = b.affect(dd["id"])
+                if aff:
+                    dims = ", ".join(f"{k}={v}" for k, v in aff.items() if v is not None)
+                    human += f"\nðŸŽ­ Affect: {dims}"
+                val = b.validity(dd["id"])
+                if val:
+                    window = f"{val.get('valid_from') or '(creation)'} .. {val.get('valid_to') or 'present'}"
+                    human += f"\nâ³ Valid: {window}"
+                    if val.get("supersedes"):
+                        human += f"  (supersedes {val['supersedes'][:8]})"
                 if rels:
-                    human += "\n🔗 Relations:\n" + "\n".join(
+                    human += "\nðŸ”— Relations:\n" + "\n".join(
                         f"   [{r['dir']}|{r['relation_type']}|{r['source']}] {r['title']} ({r['id'][:8]})"
                         for r in rels)
                 out(dd, human)
 
         elif args.cmd == "update":
             tags = [x.strip() for x in args.tags.split(",")] if args.tags is not None else None
-            dr = b.update(args.id, args.title, args.content, tags, args.collection)
-            out(dr, f"✅ Updated {args.id[:8]}" if dr else f"No live drawer {args.id[:8]}")
+            kw = {}
+            if args.subject is not None:
+                kw["sb_subject"] = args.subject or None  # "" clears → default self
+            if args.affect is not None:
+                kw["sb_affect"] = _parse_affect_arg(args.affect)
+            if args.valid_from is not None:
+                kw["sb_valid_from"] = args.valid_from or None
+            if args.valid_to is not None:
+                kw["sb_valid_to"] = args.valid_to or None
+            if args.supersedes is not None:
+                kw["sb_supersedes"] = args.supersedes or None
+            dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
+            out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 
         elif args.cmd == "delete":
             ok = b.delete(args.id, args.hard)
             kind = "hard-deleted (permanent)" if args.hard else "soft-deleted (recover with restore)"
-            out({"ok": ok}, f"{'🗑️ ' + kind if ok else 'Nothing to delete'}: {args.id[:8]}")
+            out({"ok": ok}, f"{'ðŸ—‘ï¸ ' + kind if ok else 'Nothing to delete'}: {args.id[:8]}")
 
         elif args.cmd == "restore":
             ok = b.restore(args.id)
-            out({"ok": ok}, f"♻️ Restored {args.id[:8]}" if ok else f"Nothing to restore: {args.id[:8]}")
+            out({"ok": ok}, f"â™»ï¸ Restored {args.id[:8]}" if ok else f"Nothing to restore: {args.id[:8]}")
 
         elif args.cmd == "list":
             res = b.list(args.collection, args.tag, args.limit, args.offset, args.sort)
-            human = "\n\n".join(_fmt_drawer_line(i + 1, d) for i, d in enumerate(res)) or "Empty."
+            human = "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res)) or "Empty."
             out(res, human)
 
         elif args.cmd == "collections":
             cs = b.collections()
-            human = f"📂 Collections ({len(cs)})\n\n" + "\n".join(
-                f"{c['name']:<14} — {c['n']} drawers" for c in cs)
+            human = f"ðŸ“‚ Collections ({len(cs)})\n\n" + "\n".join(
+                f"{c['name']:<14} â€” {c['n']} concepts" for c in cs)
             out(cs, human)
 
         elif args.cmd == "tags":
             ts = b.tags(args.sort, args.limit)
-            human = "\n".join(f"{t['name']:<20} ×{t['n']}" for t in ts) or "No tags."
+            human = "\n".join(f"{t['name']:<20} Ã—{t['n']}" for t in ts) or "No tags."
             out(ts, human)
 
         elif args.cmd == "relate":
             try:
                 rid = b.relate(args.from_id, args.to_id, args.type, args.strength)
-                out({"id": rid}, f"🔗 {args.from_id[:8]} —{args.type}→ {args.to_id[:8]}")
+                out({"id": rid}, f"ðŸ”— {args.from_id[:8]} â€”{args.type}â†’ {args.to_id[:8]}")
             except ValueError as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
 
         elif args.cmd == "related":
             rs = b.related(args.id, args.limit, args.source)
@@ -240,28 +361,28 @@ def main():
                 try:
                     res = b.export_vault(args.output, args.collection)
                 except Exception as ex:
-                    out({"error": str(ex)}, f"❌ {ex}")
+                    out({"error": str(ex)}, f"âŒ {ex}")
                     sys.exit(1)
-                print(f"💾 Exported {res['drawers']} notes → {res['path']}/")
+                print(f"ðŸ’¾ Exported {res['concepts']} notes â†’ {res['path']}/")
             else:
                 data = b.export(args.collection, args.format)
                 if args.output:
                     Path(args.output).write_text(data, encoding="utf-8")
-                    print(f"💾 Exported to {args.output}")
+                    print(f"ðŸ’¾ Exported to {args.output}")
                 else:
                     print(data)
 
         elif args.cmd == "import":
             mode = "replace" if args.replace else "merge"
             res = b.import_(args.path, mode)
-            out(res, f"📥 Imported: {res['added']} added, {res['skipped']} skipped ({mode})")
+            out(res, f"ðŸ“¥ Imported: {res['added']} added, {res['skipped']} skipped ({mode})")
 
         elif args.cmd == "stats":
             s = b.stats(args.collection)
-            top_tags = ", ".join(t["name"] + "×" + str(t["n"]) for t in s["tags"]) or "none"
+            top_tags = ", ".join(t["name"] + "Ã—" + str(t["n"]) for t in s["tags"]) or "none"
             colls = ", ".join(c["name"] + "(" + str(c["n"]) + ")" for c in s["collections"])
-            human = (f"📊 SecondBrain\n\n"
-                     f"Drawers: {s['drawers']} ({s['uncollected']} uncollected, "
+            human = (f"ðŸ“Š SecondBrain\n\n"
+                     f"Concepts: {s['concepts']} ({s['uncollected']} uncollected, "
                      f"{s['soft_deleted']} soft-deleted)\n"
                      f"Relations: {sum(s['relations'].values())} "
                      f"({', '.join(str(k) + ': ' + str(v) for k, v in s['relations'].items()) or 'none'})\n"
@@ -272,32 +393,32 @@ def main():
 
         elif args.cmd == "summary":
             s = b.summary(cold_threshold_days=args.cold_days)
-            d = s["drawers"]
+            d = s["concepts"]
             rels = s["relations"]
             rec_lines = []
             if s["recommendation"] == "archive":
                 rec_lines = [
                     "",
-                    "💡 Recommendation: archive",
-                    f"   You have {d['cold']} cold drawers (untouched "
+                    "ðŸ’¡ Recommendation: archive",
+                    f"   You have {d['cold']} cold concepts (untouched "
                     f"{d['cold_threshold_days']}+ days, {d['cold']*100//max(d['alive'],1)}% of total).",
                     "   Run: brain archive --output ~/.secondbrain/archive-$(date +%F).db",
                 ]
             elif s["recommendation"] == "archive-then-distill":
                 rec_lines = [
                     "",
-                    "💡 Recommendation: archive then distill",
-                    f"   Brain is {s['size_human']} with {d['cold']} cold drawers. "
+                    "ðŸ’¡ Recommendation: archive then distill",
+                    f"   Brain is {s['size_human']} with {d['cold']} cold concepts. "
                     "Archive first, then distill a focused working copy.",
                 ]
             human = (
-                f"🧠 SecondBrain summary\n\n"
+                f"ðŸ§  SecondBrain summary\n\n"
                 f"  Path:     {s['db_path']}\n"
                 f"  Size:     {s['size_human']}\n"
-                f"  Drawers:  {d['alive']:,} alive   {d['cold']:,} cold ({d['cold_threshold_days']}d+)   "
+                f"  Concepts:  {d['alive']:,} alive   {d['cold']:,} cold ({d['cold_threshold_days']}d+)   "
                 f"{d['soft_deleted']:,} soft-deleted\n"
                 f"  Relations: {sum(rels.values()):,} total   "
-                f"({', '.join(f'{k}×{v}' for k, v in rels.items()) or 'none'})\n"
+                f"({', '.join(f'{k}Ã—{v}' for k, v in rels.items()) or 'none'})\n"
                 f"  Pending:  {s['pending_links']:,} unresolved wikilinks"
             ) + "\n".join(rec_lines)
             out(s, human)
@@ -310,21 +431,21 @@ def main():
                                 since=args.since, until=args.until,
                                 include_related_depth=args.include_related_depth)
             except (ValueError, FileExistsError) as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
-            if res["drawers"] == 0:
-                out(res, f"⚠ No drawers matched. Nothing written to {res['path']}.")
+            if res["concepts"] == 0:
+                out(res, f"âš  No concepts matched. Nothing written to {res['path']}.")
                 sys.exit(0)
 
             if args.activate:
                 working = b.db_path.resolve()
                 new_path = Path(args.output).resolve()
                 if new_path == working:
-                    sys.exit("❌ --output is the same as the working brain; refusing to swap.")
+                    sys.exit("âŒ --output is the same as the working brain; refusing to swap.")
                 if new_path.parent != working.parent:
                     target = working.parent / new_path.name
                     if target.exists():
-                        sys.exit(f"❌ {target} already exists; pick a different --output.")
+                        sys.exit(f"âŒ {target} already exists; pick a different --output.")
                     os.replace(new_path, target)
                     new_path = target
 
@@ -334,11 +455,11 @@ def main():
                 os.replace(working, backup)
                 os.replace(new_path, working)
                 human = (
-                    f"✨ Distilled {res['drawers']:,} drawers → {working}\n"
+                    f"âœ¨ Distilled {res['concepts']:,} concepts â†’ {working}\n"
                     f"   tags:        {res['tags']:,}\n"
                     f"   relations:   {res['relations']:,}\n"
                     f"   pending:     {res['pending_links']:,}\n"
-                    f"   old brain →  {backup}\n"
+                    f"   old brain â†’  {backup}\n"
                     f"   new working: {working}\n"
                     f"   old brain is now a point-in-time backup; restore with `cp {backup} {working}`"
                 )
@@ -346,7 +467,7 @@ def main():
                 sys.exit(0)
 
             human = (
-                f"✨ Distilled {res['drawers']:,} drawers → {args.output}\n"
+                f"âœ¨ Distilled {res['concepts']:,} concepts â†’ {args.output}\n"
                 f"   tags:      {res['tags']:,}\n"
                 f"   relations: {res['relations']:,}\n"
                 f"   pending:   {res['pending_links']:,}\n"
@@ -361,25 +482,25 @@ def main():
                                 before_date=args.before, tags=tags or None,
                                 collection=args.collection, dry_run=args.dry_run)
             except (ValueError, FileExistsError) as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
             if args.dry_run:
                 human = (
-                    f"🔍 Dry run — no files written\n"
-                    f"   would archive:  {res['would_archive']:,} drawers (criterion: {res['criterion']})\n"
-                    f"   would remain:   {res['would_remain']:,} drawers\n"
+                    f"ðŸ” Dry run â€” no files written\n"
+                    f"   would archive:  {res['would_archive']:,} concepts (criterion: {res['criterion']})\n"
+                    f"   would remain:   {res['would_remain']:,} concepts\n"
                     f"   target file:    {res['path']}"
                 )
             elif res["archived"] == 0:
-                human = f"⚠ No drawers matched ({res['criterion']}). Nothing archived."
+                human = f"âš  No concepts matched ({res['criterion']}). Nothing archived."
             else:
                 human = (
-                    f"🗄️  Archived {res['archived']:,} drawers → {res['path']}\n"
+                    f"ðŸ—„ï¸  Archived {res['archived']:,} concepts â†’ {res['path']}\n"
                     f"   criterion:   {res['criterion']}\n"
-                    f"   relations:   {res['archived_relations']:,} archived with their drawers\n"
-                    f"   remaining:   {res['remaining']:,} drawers in working brain\n"
+                    f"   relations:   {res['archived_relations']:,} archived with their concepts\n"
+                    f"   remaining:   {res['remaining']:,} concepts in working brain\n"
                     f"   new size:    {res['size_remaining_human']}\n"
-                    f"\n   to bring a drawer back: brain merge-brain --from {res['path']}"
+                    f"\n   to bring a concept back: brain merge-brain --from {res['path']}"
                 )
             out(res, human)
 
@@ -387,22 +508,33 @@ def main():
             try:
                 res = b.merge_brain(args.source)
             except FileNotFoundError as ex:
-                out({"error": str(ex)}, f"❌ {ex}")
+                out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
             human = (
-                f"🔀 Merged from {res['source_path']}\n"
-                f"   drawers added:        {res['drawers_added']:,}  "
-                f"(skipped: {res['drawers_skipped']:,} already present)\n"
+                f"ðŸ”€ Merged from {res['source_path']}\n"
+                f"   concepts added:        {res['concepts_added']:,}  "
+                f"(skipped: {res['concepts_skipped']:,} already present)\n"
                 f"   tag links added:      {res['tag_links_added']:,}\n"
                 f"   relations added:      {res['relations_added']:,}\n"
                 f"   pending links added:  {res['pending_links_added']:,}\n"
-                f"\n   wikilinks re-derived for new drawers; cross-refs auto-resolved."
+                f"\n   wikilinks re-derived for new concepts; cross-refs auto-resolved."
             )
             out(res, human)
 
+    except ValueError as ex:
+        # Actionable validation errors (e.g. a malformed --valid-from / --valid-to
+        # ISO date) surface as a clean one-line message, never a stack trace.
+        # (Generalizing this boundary to every bad-input path is gap G28.)
+        msg = str(ex)
+        if args.json:
+            print(json.dumps({"error": msg}, ensure_ascii=False, indent=2))
+        else:
+            print(f"❌ {msg}", file=sys.stderr)
+        sys.exit(1)
     finally:
         b.close()
 
 
 if __name__ == "__main__":
     main()
+
