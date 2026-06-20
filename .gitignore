@@ -30,3 +30,5 @@ dist/
 
 # Hook runtime logs
 hooks/*.log
+.opencode/
+.claude/

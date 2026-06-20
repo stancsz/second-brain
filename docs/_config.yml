@@ -1,0 +1,10 @@
+# GitHub Pages config for the second-brain marketing site.
+# Source: main branch /docs folder.  Theme: Cayman (clean project landing page).
+title: second-brain
+description: Own your agent's memory — local, file-based, zero-dependency. The own-it alternative to rented AI-memory infra.
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Internal design docs (00-..10-roadmap, decisions/, tasks/) live in this folder but are
+# NOT linked from index.md. If you want a marketing-only site that doesn't serve them,
+# move the landing to a dedicated gh-pages branch (see growth/LOOP.md handoff notes).

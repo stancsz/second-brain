@@ -1,6 +1,6 @@
 # second-brain
 
-> A local, file-based knowledge graph for AI agents. One SQLite file, zero dependencies, full data ownership. **OKF v0.1-native.** Multi-device sync via git. Psychological memory foundation (subjects, temporal validity, affect).
+> **Own your psychological twin — don't rent it.** A local, file-based container that models a *real person* — their decisions, preferences, and the affect behind them, with bi-temporal validity and supersession — and an OKF v0.1-native knowledge graph that AI agents read and write natively. One SQLite file, zero dependencies, full data ownership, multi-device sync via git.
 >
 > [中文文档](./README.zh.md) · [Architecture](./references/architecture.md) · [SKILL.md](./SKILL.md)
 
@@ -11,9 +11,11 @@
 
 ---
 
-> You're not building a second brain. You're renting one. Every few years the rent goes up — the export becomes a Pro feature, the API terms tighten, the company gets acquired or nearly shuts down. You migrate, you lose structure, and the cycle starts again. `second-brain` bets on the other side: one file, in your home directory, versioned in your git repo. No migration plan, because there's no vendor to migrate from.
+> **The digital-mind platforms want to rent you back to yourself.** Delphi, Personal.ai, and the wave behind them will happily build an AI version of *you* — your voice, your decisions, your personality — and keep it on their servers, behind their API, on their pricing. Your psychological twin becomes a subscription. The day the terms change, the price jumps, or the company gets acquired, the model of who you are changes hands with it. That is the most personal data there will ever be, and the entire category is racing to host it for you.
 
-> **It is important to own your data and own your knowledge.** Your notes are your intellectual history — the decisions you made, the things you learned, the connections you drew. That record belongs to you, not to a platform. `second-brain` keeps it that way: a plain file you can read, copy, version, and carry with you forever.
+> `second-brain` bets on the other side: **your twin is a folder of plain markdown in your own git.** Every memory of the person — what they decided, what they prefer, how they felt, and *when* each of those was true — lives in files you can read, diff, version, and carry forever. No vendor owns the model of you. There is no migration plan, because there is no one to migrate from. **Nobody else lets you own the psychological twin instead of renting it. That is the whole point.**
+
+> **It is important to own your data and own your knowledge.** Your memory is your intellectual and emotional history — the decisions you made, the things you learned, the people you cared about, the way you changed. That record belongs to you, not to a platform. `second-brain` keeps it that way: plain files you can read, copy, version, and carry with you forever.
 
 ---
 
@@ -24,6 +26,39 @@
 Concepts are linked together through `[[wikilinks]]` in their content, building a knowledge graph automatically as you write. The store supports full-text search, typed relations, tags, collections, soft delete, and round-trip export/rebuild to Markdown. **Multi-device sync** works via a git remote (the Bundle is your source of truth; SQLite is a disposable cache). Psychological memory is native: Concepts carry optional **subjects** (who or what the memory is about), **temporal validity** (when it's true), **affect** (emotional valence/arousal), and **supersession** (later facts replace earlier ones).
 
 The `SKILL.md` in this repository makes `second-brain` a drop-in [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills): any agent that loads the skill can save, search, and link Concepts in your brain during a conversation.
+
+## What it's for
+
+The category around you is racing to build your **digital twin** — and to host it. `second-brain` is the same ambition with the ownership inverted: **the twin is yours, on disk, in your git.** It serves two jobs that share the same files.
+
+### 1. Own a psychological twin of a real person (the deep goal)
+
+Point the auto-capture hooks at your real sessions and the brain quietly distills the durable signal of a *person* — their decisions, preferences, knowledge, and the affect behind them — into titled Concepts, never raw chat. What makes it a *twin* and not a pile of notes:
+
+- **Subjects** (`sb_subject`) scope every memory to *who or what it's about*, so a persona sub-graph is one query away.
+- **Structured affect** (`sb_affect`) records the emotional valence/arousal/emotion behind a memory — the difference between knowing a fact about someone and knowing how they *felt* about it.
+- **Bi-temporal validity** (`sb_valid_from`/`sb_valid_to`) + **supersession** mean the model of the person stays current as they change — `supersede()` closes the old window instead of deleting it — yet stays historically queryable: `recall --as-of <date>` reconstructs *who they were on any past date*. People are not snapshots; this models the trajectory.
+
+Over time this accumulates into an owned, evolving container that models how a real human actually thinks, feels, and changes — the foundation an agent needs to faithfully *shadow* a specific person instead of impersonating a generic one. And because it's plain OKF markdown, you can open the model of yourself in a text editor and read it.
+
+### 2. Give an agent a character
+
+The same primitives, pointed at a fictional subject, give an agent a durable **character**: a consistent personality with its own history, preferences, and emotional coloring, persisted as files you own rather than a system prompt you re-paste every session.
+
+### Stated honestly
+
+The capture pipeline, the psychological fields, and the bi-temporal history are **built and working today** (see [Features](#features)). A turnkey "mimic me" agent on top of them is the **direction, not a finished product** — and on raw mimicry fidelity, the well-funded cloud platforms are further along. What `second-brain` guarantees *right now*, and what none of them offer, is that **the substrate is yours**: the model of a person is never rented, never opaque, and never locked to a vendor that can change the terms or disappear.
+
+## Rented digital mind vs. owned psychological twin
+
+| | Where "you" live | You own the model? | Psychological structure | If they vanish / change terms |
+|---|---|---|---|---|
+| **Delphi / Personal.ai** (digital-mind platforms) | Their cloud | No — hosted, per their terms & pricing | Yes, but proprietary and opaque | The model of you goes with them |
+| **Letta / MemGPT** | Your infra or their cloud | Partially (self-hostable runtime) | Agent-state memory blocks — not a person-model | You keep a runtime, not a portable twin |
+| **Mem0 / Zep** | Vendor cloud / API | No / partial | Bi-temporal graph (Zep), but built for *agent* memory | Vendor-controlled; Zep's community edition was deprecated |
+| **second-brain** | **Your git, plain markdown** | **Yes, fully** | **Subjects + bi-temporal validity + affect + supersession, in OKF you can read** | **Nothing changes — they're your files** |
+
+The hosted platforms lead on capability — voice, fidelity, scale. `second-brain` leads on the one axis that can't be added later: **you own the twin.** That intersection — *owned, local, file-based, psychologically structured* — is, as far as we can find, empty except for this project.
 
 ## Why
 
@@ -50,7 +85,7 @@ Most "AI memory" products store your data in a third-party cloud, behind an API,
 - **Conflict parking.** Concurrent edits to the same Concept on two devices park as `*.conflict.md` instead of clobbering. Human resolves the conflict once; both edits preserved until then.
 - **Import / export.** Round-trip to JSON, Markdown (Obsidian-compatible, OKF-native), and CSV.
 - **Distill & archive.** Goal-based filter (`distill --query "X"`) writes a focused working brain without touching the old one (pass `--activate` to swap). Cold-storage (`archive --older-than-days 180`) moves untouched Concepts out and VACUUMs the working brain. `merge-brain --from <archive>` brings them back.
-- **Psychological memory foundation.** Concepts carry optional **subjects** (who/what the memory is about; enables persona sub-graphs), **temporal validity** (`sb_valid_from`/`to`; enables historical queries), **affect** (emotional valence/arousal/emotion type), and **supersession** (newer facts replace older ones). These fields ride in OKF frontmatter and enable emotion-aware recall and perspective-aware memory synthesis.
+- **Psychological memory foundation.** Concepts carry optional **subjects** (who/what the memory is about; enables persona sub-graphs), **temporal validity** (`sb_valid_from`/`to`; enables historical queries), **affect** (emotional valence/arousal/emotion type), and **supersession** (newer facts replace older ones). These fields ride in OKF frontmatter and enable emotion-aware recall, perspective-aware memory synthesis, and — taken together — an owned, evolving model of a real person rather than a flat pile of notes (see [What it's for](#what-its-for)).
 - **Logs stay logs; the brain stays clean.** A `Stop` hook archives the full raw transcript of every session to plain files under `~/.secondbrain/logs/` — never into the brain. The brain (`brain.db`) holds only *distilled* know-how: titled Concepts the agent extracts at session end (decisions, preferences, facts, reusable knowledge), plus anything you explicitly save. Searching your knowledge never returns a wall of raw chat.
 - **Proactive recall.** A `UserPromptSubmit` hook searches the clean brain against each prompt and injects relevant Concepts into the agent's context *before* it answers — so you don't have to ask "what do I know about X".
 - **`/history` slash command.** Browse past conversations in your brain, then dive into the chosen one.
@@ -202,9 +237,12 @@ The design splits cleanly in two: **logs stay logs, the brain stays clean.**
   with `/history`, `grep` them, delete them, git-ignore them. They never touch
   the brain.
 - **Know-how → the brain.** At session end the hook asks the agent to extract
-  the durable bits (decisions, preferences, facts, reusable knowledge) into
-  clean, titled Concepts. The brain accumulates distilled knowledge, not bulk
-  chat — so `search` and proactive recall stay sharp.
+  the durable bits (decisions, preferences, facts, reusable knowledge — and,
+  over many sessions, the durable signal of *you*: how you decide, what you
+  prefer, the affect behind it) into clean, titled Concepts. The brain
+  accumulates distilled knowledge, not bulk chat — so `search` and proactive
+  recall stay sharp. This is the shadow-distillation loop in practice: each
+  session leaves the model of the person a little more complete.
 
 The easiest way to wire it up is `install.sh`, which merges the hooks into your
 existing settings (no overwrite) and substitutes the real path:
@@ -330,6 +368,7 @@ For continuous backup, pair with [litestream](https://litestream.io/) to replica
 
 - **v2.1 (current).** FTS5, soft delete, write-time-frozen wikilinks, `pending_links` table, recursive traverse.
 - **Phase 2.** MCP server, vector search via `sqlite-vec`, automatic `inferred`-source links above a similarity threshold.
+- **North star — the shadow-distilled human.** The psychological-memory layer (subjects, affect, bi-temporal validity, supersession) and the auto-distill loop are the foundation for an agent that can faithfully shadow a *specific* real person over time. The work ahead: richer persona synthesis from the sub-graph, drift/consistency checks across superseded facts, and a recall surface that reconstructs "who this person was as of date X" for grounding a mimic agent.
 - **Ideas.** Markdown round-trip sync, Obsidian-compatible export refinements, encrypted local replicas.
 
 ## Contributing
