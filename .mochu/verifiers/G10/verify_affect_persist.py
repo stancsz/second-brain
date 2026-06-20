@@ -153,8 +153,8 @@ def main() -> int:
         if _titles(grief) != ["Grief at the funeral", "Quiet grief months later"]:
             fails.append(f"recall_by_affect(emotion=grief): got {_titles(grief)}")
         # must return full Concept dicts (queryable PER CONCEPT), not bare ids
-        if grief and not all(c.get("body") for c in grief):
-            fails.append("recall_by_affect returned concepts without body — not full Concept dicts")
+        if grief and not all(c.get("content") for c in grief):
+            fails.append("recall_by_affect returned concepts without content — not full Concept dicts")
 
         # range: min_intensity
         intense = brain.recall_by_affect(min_intensity=0.7)
