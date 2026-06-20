@@ -12,3 +12,4 @@ G08 subject-subgraph (R10 M1) — until iter-20
 G10 affect-persist (R12) — until iter-21
 G09 temporal-validity + recall_as_of (R11) — until iter-24
 G26 iso-validation — until iter-25
+G27 restore-psych-dims — until iter-26
