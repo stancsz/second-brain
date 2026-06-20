@@ -143,11 +143,16 @@ with tempfile.TemporaryDirectory() as tmp:
     chk("rebuild keeps public body", gotpub is not None and gotpub["content"] == PUBLIC)
     b2.con.close()
 
-# ── Phase 6: refuse-to-leak ──────────────────────────────────────────────────
-print("Phase 6: refuse-to-leak when no key is available")
+# ── Phase 6: refuse-to-leak (strict) + warn (default) — opt-in encryption ────
+# Encryption is opt-in. Without a key the DEFAULT is plaintext-with-WARNING (so
+# existing Episode/psych workflows keep working and the user is never silently
+# leaked). A user who wants the hard guarantee sets SECONDBRAIN_REQUIRE_ENCRYPTION
+# and export then REFUSES rather than write private plaintext.
+print("Phase 6: strict mode refuses (no leak); default warns (not silent)")
 with tempfile.TemporaryDirectory() as tmp:
     tmp = pathlib.Path(tmp)
     no_key(tmp)
+    os.environ["SECONDBRAIN_REQUIRE_ENCRYPTION"] = "1"
     b = _brain_mod.SecondBrain(str(tmp / "b.db"))
     b.add("Secret episode", SECRET, tags=["private"])
     bundle_dir = tmp / "okf"
@@ -157,14 +162,37 @@ with tempfile.TemporaryDirectory() as tmp:
     except Exception:
         refused = True
     b.con.close()
-    chk("export REFUSES (raises) on private concept without key", refused)
-    # and crucially: no plaintext secret anywhere in the bundle dir
+    chk("strict mode: export REFUSES private concept without key", refused)
     leaked = False
     if bundle_dir.exists():
         for f in bundle_dir.rglob("*.md"):
             if SECRET in f.read_text(encoding="utf-8"):
                 leaked = True
-    chk("no plaintext secret leaked to the bundle", not leaked)
+    chk("strict mode: no plaintext secret leaked", not leaked)
+    del os.environ["SECONDBRAIN_REQUIRE_ENCRYPTION"]
+
+# default (non-strict) path: succeeds but WARNS — capture via subprocess stderr
+print("Phase 6b: default no-key export warns (not silent) and still succeeds")
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = pathlib.Path(tmp)
+    db = str(tmp / "b.db")
+    bundle_dir = tmp / "okf"
+    seed = (
+        "import sys; sys.path.insert(0, r'%s')\n" % str(ROOT / 'scripts') +
+        "import brain, bundle\n"
+        "b = brain.SecondBrain(r'%s')\n" % db +
+        "b.add('Secret note', 'sensitive body', tags=['private'])\n"
+        "bundle.export(b, r'%s')\n" % str(bundle_dir) +
+        "b.con.close()\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "SECONDBRAIN_REQUIRE_ENCRYPTION"}
+    env["SECONDBRAIN_KEY_FILE"] = str(tmp / "nokey.key")
+    r = subprocess.run([sys.executable, "-c", seed], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", env=env)
+    chk("default no-key export succeeds", r.returncode == 0, (r.stderr or "")[:300])
+    chk("default no-key export emits a warning (not silent)",
+        "warning" in (r.stderr or "").lower() and "plaintext" in (r.stderr or "").lower(),
+        (r.stderr or "")[:300])
 
 # ── Phase 7: EXEC subprocess ─────────────────────────────────────────────────
 print("Phase 7: subprocess encrypt->write->read-raw asserts ciphertext")

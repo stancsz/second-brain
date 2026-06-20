@@ -17,9 +17,13 @@ Three lazy artifacts that would pass a weak suite — and how this suite blocks 
 
 3. **Silently writes plaintext when no key is configured** — encryption only
    engages if a key happens to be present; with no key, the private concept is
-   exported as plaintext (worst case: the user thinks it's protected). Blocked by
-   Phase 6: with no key, export must RAISE and the suite greps the whole bundle to
-   assert the plaintext secret was not written anywhere.
+   exported as plaintext and the user is never told (worst case: they think it's
+   protected). Encryption is opt-in, so no-key plaintext is allowed — but it must
+   never be SILENT, and a user must be able to demand the hard guarantee. Blocked
+   by Phase 6 (strict `SECONDBRAIN_REQUIRE_ENCRYPTION` mode: export RAISES and the
+   suite greps the whole bundle to confirm no plaintext secret was written) and
+   Phase 6b (default no-key export must emit a warning naming "plaintext" — proven
+   via captured subprocess stderr — so it is never silent).
 
 The suite exercises the real export→rebuild path end to end and drives a
 subprocess (Phase 7) that encrypts, writes to disk, reads the raw bytes back, and
