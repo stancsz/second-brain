@@ -3,6 +3,25 @@
 ## [Unreleased]
 
 ### Added
+- **Bi-temporal validity storage + supersession** (R11 / G09 **M1 of 2**, mochu
+  iter-17) — the temporal fields `sb_valid_from` / `sb_valid_to` /
+  `sb_supersedes` (already round-tripped through OKF files) now populate a typed
+  `validity` table (one row per Concept with a window, `ON DELETE CASCADE`),
+  rebuilt from `concepts.metadata` by `bundle.rebuild()`. New API:
+  `SecondBrain.validity(id)` returns `{valid_from, valid_to, supersedes}` (None
+  when timeless; partial windows OK), and **`supersede(old_id, title, content,
+  …, as_of=…)`** records a contradiction the bi-temporal way — it CLOSES the old
+  fact's window at `as_of` and adds a new fact with `supersedes=old_id` and
+  `valid_from=as_of`, **preserving the old fact** (history stays queryable, never
+  deleted). `add`/`update` gained `--valid-from` / `--valid-to` / `--supersedes`
+  capture flags; `brain show <id>` prints the validity window (and what it
+  supersedes). Matches the core of Zep/Graphiti's bi-temporal model
+  (per-fact validity windows; contradiction closes rather than deletes). 7 new
+  unit tests; verifier `temporal-validity` (corpus 16/16).
+  - **Not yet** (M2, next iteration): `recall_as_of(date)` / `brain recall
+    --as-of <date>` point-in-time query that returns the historically-valid
+    state and excludes superseded/expired facts — that query is what closes R11.
+    M1 ships the storage and write-path R11 stands on.
 - **Structured affect: `sb_affect` is now queryable** (R12 / G10, mochu iter-15)
   — a memory's `sb_affect: {valence, arousal, emotion, intensity}` (already
   round-tripped through OKF files) now also populates a typed `affect` table

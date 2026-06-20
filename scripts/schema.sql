@@ -158,3 +158,27 @@ CREATE TABLE IF NOT EXISTS affect (
 
 CREATE INDEX IF NOT EXISTS ix_affect_emotion   ON affect(emotion);
 CREATE INDEX IF NOT EXISTS ix_affect_intensity ON affect(intensity);
+
+-- ---------------------------------------------------------------------------
+-- Bi-temporal validity (G09 / R11)
+-- One row per Concept carrying a validity window. `valid_from` / `valid_to` are
+-- VALID-time (when the fact was/became true in the world), distinct from the
+-- ingestion/wall-clock time already on concepts (`created_at` / `updated_at`).
+-- `supersedes` points at the Concept id this fact replaces. A contradiction is
+-- recorded by CLOSING the old fact's `valid_to` and adding a new fact with
+-- `supersedes` set — history is preserved, never deleted (the bi-temporal
+-- invariant). A Concept with no row is "valid from its created_at, still valid".
+-- ISO 8601 strings (lexicographically comparable). Derived from
+-- concepts.metadata; rebuilt by SecondBrain.rebuild_validity_index().
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS validity (
+    concept_id TEXT PRIMARY KEY,
+    valid_from TEXT,   -- ISO; NULL → valid since the Concept's created_at
+    valid_to   TEXT,   -- ISO; NULL → still valid (open window)
+    supersedes TEXT,   -- Concept id this fact replaces (NULL if original)
+    FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_validity_window    ON validity(valid_from, valid_to);
+CREATE INDEX IF NOT EXISTS ix_validity_supersedes ON validity(supersedes);

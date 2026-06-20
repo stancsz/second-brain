@@ -47,6 +47,14 @@ Match the user's phrasing to the right subcommand. If they say:
   - To capture affect on a memory, pass `--affect` to `add`/`update`:
     `brain add "<title>" "<content>" --affect '{"emotion":"grief","valence":-0.8,"intensity":0.9}'`
     (any subset of the four dimensions). `brain show <id>` prints the affect line.
+- Temporal facts that change over time → give them a validity window.
+  - Capture: `brain add "<title>" "<content>" --valid-from 2020-01-01 [--valid-to 2023-06-01]`.
+    A fact with no window is treated as valid since creation, still valid.
+  - When a fact is corrected/replaced, don't overwrite — **supersede** it:
+    `SecondBrain.supersede(old_id, "<new title>", "<new content>", as_of="2023-06-01")`
+    closes the old fact's window at `as_of` and adds the new fact linked to it,
+    keeping the old one as history. `brain show <id>` prints the `⏳ Valid:`
+    window. (Point-in-time `recall --as-of <date>` lands in the next iteration.)
 
 ## Output rules
 

@@ -81,6 +81,9 @@ def main():
     a.add_argument("--collection"); a.add_argument("--tags"); a.add_argument("--source", action="append")
     a.add_argument("--subject", help="sb_subject: the Bundle path this memory is about (e.g. /people/rox.md). Defaults to /people/self.md.")
     a.add_argument("--affect", help='sb_affect as JSON, e.g. \'{"emotion":"grief","valence":-0.8,"arousal":0.3,"intensity":0.9}\' (any subset of dims)')
+    a.add_argument("--valid-from", help="sb_valid_from: ISO date this fact became true (e.g. 2024-01-15)")
+    a.add_argument("--valid-to", help="sb_valid_to: ISO date this fact stopped being true (open if omitted)")
+    a.add_argument("--supersedes", help="sb_supersedes: id of the Concept this fact replaces")
 
     s = sub.add_parser("search"); s.add_argument("query")
     s.add_argument("--collection"); s.add_argument("--tag"); s.add_argument("--limit", type=int, default=10)
@@ -102,6 +105,9 @@ def main():
     u.add_argument("--title"); u.add_argument("--content"); u.add_argument("--tags"); u.add_argument("--collection")
     u.add_argument("--subject", help='set sb_subject (pass "" to clear, back to /people/self.md)')
     u.add_argument("--affect", help='set sb_affect JSON (pass "" to clear)')
+    u.add_argument("--valid-from", help='set sb_valid_from ISO date (pass "" to clear)')
+    u.add_argument("--valid-to", help='set sb_valid_to ISO date (pass "" to clear)')
+    u.add_argument("--supersedes", help='set sb_supersedes id (pass "" to clear)')
 
     d = sub.add_parser("delete"); d.add_argument("id"); d.add_argument("--hard", action="store_true")
     r = sub.add_parser("restore"); r.add_argument("id")
@@ -180,7 +186,9 @@ def main():
             tags = [x.strip() for x in (args.tags or "").split(",") if x.strip()]
             affect = _parse_affect_arg(args.affect)
             dr = b.add(args.title, content, args.collection, tags, args.source or [],
-                       sb_subject=args.subject, sb_affect=affect)
+                       sb_subject=args.subject, sb_affect=affect,
+                       sb_valid_from=args.valid_from, sb_valid_to=args.valid_to,
+                       sb_supersedes=args.supersedes)
             links = b.related(dr["id"], source="wikilink")
             msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
             if links:
@@ -258,6 +266,12 @@ def main():
                 if aff:
                     dims = ", ".join(f"{k}={v}" for k, v in aff.items() if v is not None)
                     human += f"\nðŸŽ­ Affect: {dims}"
+                val = b.validity(dd["id"])
+                if val:
+                    window = f"{val.get('valid_from') or '(creation)'} .. {val.get('valid_to') or 'present'}"
+                    human += f"\nâ³ Valid: {window}"
+                    if val.get("supersedes"):
+                        human += f"  (supersedes {val['supersedes'][:8]})"
                 if rels:
                     human += "\nðŸ”— Relations:\n" + "\n".join(
                         f"   [{r['dir']}|{r['relation_type']}|{r['source']}] {r['title']} ({r['id'][:8]})"
@@ -271,6 +285,12 @@ def main():
                 kw["sb_subject"] = args.subject or None  # "" clears → default self
             if args.affect is not None:
                 kw["sb_affect"] = _parse_affect_arg(args.affect)
+            if args.valid_from is not None:
+                kw["sb_valid_from"] = args.valid_from or None
+            if args.valid_to is not None:
+                kw["sb_valid_to"] = args.valid_to or None
+            if args.supersedes is not None:
+                kw["sb_supersedes"] = args.supersedes or None
             dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
             out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 

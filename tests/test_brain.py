@@ -838,6 +838,66 @@ class TestBrain(unittest.TestCase):
         self.assertIsNone(self.b.con.execute(
             "SELECT 1 FROM affect WHERE concept_id=?", (dr["id"],)).fetchone())
 
+    # -----------------------------------------------------------------------
+    # Bi-temporal validity (G09 / R11 M1)
+    # -----------------------------------------------------------------------
+
+    def test_validity_persists_and_reads_back(self):
+        """add(sb_valid_from/to=...) stores a typed validity row."""
+        dr = self.b.add("Lived in NYC", "Brooklyn", collection="facts",
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-06-01")
+        self.assertEqual(
+            self.b.validity(dr["id"]),
+            {"valid_from": "2020-01-01", "valid_to": "2023-06-01", "supersedes": None})
+
+    def test_validity_absent_returns_none(self):
+        """A concept without temporal fields has no validity row."""
+        dr = self.b.add("Timeless", "always", collection="facts")
+        self.assertIsNone(self.b.validity(dr["id"]))
+
+    def test_validity_partial_window(self):
+        """valid_from alone persists with valid_to NULL."""
+        dr = self.b.add("Open", "ongoing", collection="facts",
+                        sb_valid_from="2024-01-15")
+        v = self.b.validity(dr["id"])
+        self.assertEqual(v["valid_from"], "2024-01-15")
+        self.assertIsNone(v["valid_to"])
+
+    def test_supersede_closes_old_and_links_new_preserving_history(self):
+        """supersede() closes the old window, links the new fact, keeps history."""
+        old = self.b.add("Lives in NYC", "Brooklyn", collection="facts",
+                         sb_valid_from="2020-01-01")
+        new = self.b.supersede(old["id"], "Lives in SF", "Mission",
+                               collection="facts", as_of="2023-06-01")
+        # old window closed at as_of, old still exists
+        self.assertEqual(self.b.validity(old["id"])["valid_to"], "2023-06-01")
+        self.assertIsNotNone(self.b.get(old["id"]))
+        # new fact links back and opens at as_of
+        vnew = self.b.validity(new["id"])
+        self.assertEqual(vnew["supersedes"], old["id"])
+        self.assertEqual(vnew["valid_from"], "2023-06-01")
+
+    def test_supersede_unknown_raises(self):
+        """supersede() on a missing concept raises a clear error."""
+        with self.assertRaises(ValueError):
+            self.b.supersede("nonexistent-id", "X", "y", collection="facts")
+
+    def test_update_sets_and_clears_validity(self):
+        """update() sets and fully clears the validity window."""
+        dr = self.b.add("Job", "gig", collection="facts", sb_valid_from="2024-01-01")
+        self.b.update(dr["id"], sb_valid_to="2024-12-31")
+        self.assertEqual(self.b.validity(dr["id"])["valid_to"], "2024-12-31")
+        self.b.update(dr["id"], sb_valid_from=None, sb_valid_to=None)
+        self.assertIsNone(self.b.validity(dr["id"]))
+
+    def test_validity_fk_cascade_on_hard_delete(self):
+        """Hard-deleting a concept removes its validity row (ON DELETE CASCADE)."""
+        dr = self.b.add("Doomed", "b", collection="facts", sb_valid_from="2024-01-01")
+        self.b.con.execute("DELETE FROM concepts WHERE id=?", (dr["id"],))
+        self.b.con.commit()
+        self.assertIsNone(self.b.con.execute(
+            "SELECT 1 FROM validity WHERE concept_id=?", (dr["id"],)).fetchone())
+
 
 if __name__ == "__main__":
     unittest.main()

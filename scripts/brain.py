@@ -27,6 +27,7 @@ import json
 import re
 import sqlite3
 import uuid
+from datetime import date as _date
 from pathlib import Path
 
 DB_PATH = Path.home() / ".secondbrain" / "brain.db"
@@ -231,13 +232,20 @@ class SecondBrain:
     # -- CRUD ----------------------------------------------------------------
 
     def add(self, title, content, collection=None, tags=None, sources=None,
-            sb_subject=None, sb_affect=None):
+            sb_subject=None, sb_affect=None, sb_valid_from=None, sb_valid_to=None,
+            sb_supersedes=None):
         did = _uuid()
         meta = {}
         if sb_subject:
             meta["sb_subject"] = sb_subject
         if sb_affect:
             meta["sb_affect"] = sb_affect
+        if sb_valid_from:
+            meta["sb_valid_from"] = sb_valid_from
+        if sb_valid_to:
+            meta["sb_valid_to"] = sb_valid_to
+        if sb_supersedes:
+            meta["sb_supersedes"] = sb_supersedes
         self.con.execute(
             "INSERT INTO concepts (id, title, content, collection, sources, metadata) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -249,6 +257,7 @@ class SecondBrain:
         self._resolve_pending_to(did, title)
         self._sync_subject_index_for(did)
         self._sync_affect_for(did, sb_affect)
+        self._sync_validity_for(did, sb_valid_from, sb_valid_to, sb_supersedes)
         self.con.commit()
         return self.get(did)
 
@@ -517,6 +526,85 @@ class SecondBrain:
         ).fetchall()
         return [self._row_to_concept(r) for r in rows]
 
+    # -- bi-temporal validity (G09 / R11) -------------------------------------
+
+    def _normalize_validity(self, valid_from, valid_to, supersedes) -> tuple | None:
+        """Coerce validity inputs to a (valid_from, valid_to, supersedes) tuple of
+        trimmed strings (or None per field), or None when there is nothing to
+        record. ISO strings are stored verbatim; non-strings are dropped."""
+        def _s(v):
+            return v.strip() if isinstance(v, str) and v.strip() else None
+        vf, vt, sup = _s(valid_from), _s(valid_to), _s(supersedes)
+        if vf is None and vt is None and sup is None:
+            return None
+        return (vf, vt, sup)
+
+    def _sync_validity_for(self, concept_id: str, valid_from, valid_to, supersedes) -> None:
+        """Upsert (or, when empty, delete) one Concept's validity row."""
+        row = self._normalize_validity(valid_from, valid_to, supersedes)
+        if row is None:
+            self.con.execute("DELETE FROM validity WHERE concept_id=?", (concept_id,))
+            return
+        vf, vt, sup = row
+        self.con.execute(
+            "INSERT INTO validity (concept_id, valid_from, valid_to, supersedes) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(concept_id) DO UPDATE SET "
+            "  valid_from=excluded.valid_from, valid_to=excluded.valid_to, "
+            "  supersedes=excluded.supersedes",
+            (concept_id, vf, vt, sup),
+        )
+
+    def rebuild_validity_index(self) -> int:
+        """Full re-sync of the validity table from concepts.metadata. Used by
+        bundle.rebuild(). Returns the validity-row count."""
+        self.con.execute("DELETE FROM validity")
+        n = 0
+        for r in self.con.execute(
+            "SELECT id, metadata, deleted_at FROM concepts"
+        ).fetchall():
+            if r["deleted_at"]:
+                continue
+            try:
+                meta = json.loads(r["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            vf, vt, sup = (meta.get("sb_valid_from"), meta.get("sb_valid_to"),
+                          meta.get("sb_supersedes"))
+            if self._normalize_validity(vf, vt, sup) is not None:
+                self._sync_validity_for(r["id"], vf, vt, sup)
+                n += 1
+        self.con.commit()
+        return n
+
+    def validity(self, concept_id: str) -> dict | None:
+        """Return {valid_from, valid_to, supersedes} for a Concept, or None if it
+        carries no validity window (→ valid since created_at, still valid)."""
+        r = self.con.execute(
+            "SELECT valid_from, valid_to, supersedes FROM validity WHERE concept_id=?",
+            (concept_id,),
+        ).fetchone()
+        return dict(r) if r else None
+
+    def supersede(self, old_id, title, content, collection=None, tags=None,
+                  sources=None, sb_subject=None, sb_affect=None, as_of=None) -> dict:
+        """Record a contradiction bi-temporally: create a NEW Concept that
+        supersedes `old_id`, set the new fact's `valid_from = as_of`, and CLOSE
+        the old fact's window at `valid_to = as_of`. The old Concept is PRESERVED
+        (its history stays queryable) — this is the core bi-temporal invariant.
+        `as_of` defaults to today (ISO date). Returns the new Concept.
+        """
+        if as_of is None:
+            as_of = _date.today().isoformat()
+        if self.get(old_id) is None:
+            raise ValueError(f"cannot supersede unknown concept: {old_id}")
+        # Close the old fact's window at as_of (its valid_from, if any, is kept).
+        self.update(old_id, sb_valid_to=as_of)
+        # Create the new fact, linked to the old via sb_supersedes.
+        return self.add(title, content, collection=collection, tags=tags,
+                        sources=sources, sb_subject=sb_subject, sb_affect=sb_affect,
+                        sb_valid_from=as_of, sb_supersedes=old_id)
+
     def get(self, concept_id):
         row = self.con.execute(
             "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL", (concept_id,)
@@ -533,7 +621,8 @@ class SecondBrain:
         return [self._row_to_concept(r) for r in rows]
 
     def update(self, concept_id, title=None, content=None, tags=None,
-               collection=None, sources=None, sb_subject=_UNSET, sb_affect=_UNSET):
+               collection=None, sources=None, sb_subject=_UNSET, sb_affect=_UNSET,
+               sb_valid_from=_UNSET, sb_valid_to=_UNSET, sb_supersedes=_UNSET):
         cur = self.get(concept_id)
         if not cur:
             return None
@@ -544,10 +633,13 @@ class SecondBrain:
         cur_meta = json.loads(self.con.execute(
             "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
         ).fetchone()["metadata"] or "{}")
-        # _UNSET = preserve current; None = clear; value = set. Applies to both
-        # sb_subject and sb_affect.
+        # _UNSET = preserve current; None = clear; value = set. Applies to
+        # sb_subject, sb_affect, and the three temporal-validity fields.
         new_sb_subject = cur_meta.get("sb_subject") if sb_subject is _UNSET else sb_subject
         new_sb_affect = cur_meta.get("sb_affect") if sb_affect is _UNSET else sb_affect
+        new_vf = cur_meta.get("sb_valid_from") if sb_valid_from is _UNSET else sb_valid_from
+        new_vt = cur_meta.get("sb_valid_to") if sb_valid_to is _UNSET else sb_valid_to
+        new_sup = cur_meta.get("sb_supersedes") if sb_supersedes is _UNSET else sb_supersedes
         new_meta = dict(cur_meta)
         if new_sb_subject:
             new_meta["sb_subject"] = new_sb_subject
@@ -557,6 +649,12 @@ class SecondBrain:
             new_meta["sb_affect"] = new_sb_affect
         else:
             new_meta.pop("sb_affect", None)
+        for _k, _v in (("sb_valid_from", new_vf), ("sb_valid_to", new_vt),
+                       ("sb_supersedes", new_sup)):
+            if _v:
+                new_meta[_k] = _v
+            else:
+                new_meta.pop(_k, None)
         self.con.execute(
             "UPDATE concepts SET title=?, content=?, collection=?, sources=?, "
             "metadata=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -577,6 +675,9 @@ class SecondBrain:
         # Re-sync affect row if sb_affect was explicitly set or cleared
         if sb_affect is not _UNSET:
             self._sync_affect_for(concept_id, new_sb_affect)
+        # Re-sync validity row if any temporal field was explicitly set or cleared
+        if sb_valid_from is not _UNSET or sb_valid_to is not _UNSET or sb_supersedes is not _UNSET:
+            self._sync_validity_for(concept_id, new_vf, new_vt, new_sup)
         self.con.commit()
         return self.get(concept_id)
 

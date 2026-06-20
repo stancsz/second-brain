@@ -8,7 +8,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
 | G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | M1 SHIPPED iter-14 (subjects + concept_subject + subject_subgraph + subjects() + CLI + 6 tests + verifier); R10 satisfied, M2/M3 are non-release enhancements (grouping, FK cascade, humanization) | 3 | 4 | 4 | 3.0 |
-| G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti v0.29.2 ships bi-temporal at MCP parity; we don't | 5 | 4 | 4 | 5.0 |
+| G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | **M1 SHIPPED iter-17** (validity table + supersede() write-path + round-trip + show display + CLI capture flags; verifier temporal-validity, corpus 16/16). **WIP — M2 OPEN** (`recall_as_of` + `brain recall --as-of` CLI + verifier temporal-asof satisfies R11). See `.mochu/wip/G09.md` | 5 | 2 | 4 | 10.0 |
 | G11 | features | `Backend` interface + S3/GCS adapters (one-way mirror) | "any cloud db / s3 / gcs" requested; none exist | 4 | 4 | 4 | 4.0 |
 | G12 | features | Google Drive / OneDrive backup adapters (MCP-first) | Requested; MCP connectors available in session | 4 | 4 | 3 | 3.0 |
 | G13 | trust | Selective-by-tag encryption (age) for private/psych Concepts before push | Psych data would hit remotes in plaintext otherwise | 5 | 4 | 3 | 3.75 |

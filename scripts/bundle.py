@@ -312,6 +312,9 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
     # Re-sync the derived affect index (R12) from concepts.metadata.sb_affect, so
     # recall_by_affect() is correct after a rebuild with no separate state.
     brain.rebuild_affect_index()
+    # Re-sync the derived validity index (R11) from concepts.metadata temporal
+    # fields, so as-of recall / supersession are correct after a rebuild.
+    brain.rebuild_validity_index()
     brain.con.commit()
     return brain
 
