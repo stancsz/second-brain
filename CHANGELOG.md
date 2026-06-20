@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+- **Structured affect: `sb_affect` is now queryable** (R12 / G10, mochu iter-15)
+  — a memory's `sb_affect: {valence, arousal, emotion, intensity}` (already
+  round-tripped through OKF files) now also populates a typed `affect` table
+  (one row per affect-bearing Concept, `ON DELETE CASCADE`). New API:
+  `SecondBrain.affect(id)` returns the typed dict (None when absent; NULL dims
+  for partially-scored memories), and `SecondBrain.recall_by_affect(emotion=…,
+  min_valence=…, max_valence=…, min_arousal=…, max_arousal=…, min_intensity=…)`
+  answers categorical + numeric-range + combined queries, returning full
+  Concepts ordered by intensity. New CLI: `brain recall-affect --emotion grief
+  --min-intensity 0.7`; `brain add/update --affect '<json>'` to capture it;
+  `brain show <id>` prints an affect line. The affect index is rebuilt from
+  `concepts.metadata` by `bundle.rebuild()`, so it is correct after any
+  files→DB rebuild with no separate state to keep aligned. 7 new unit tests;
+  verifier `affect-persist` (corpus 15/15). This is the queryable foundation
+  for emotional-mimic agents (Zep/Mem0-class affect recall).
+  - Also fixed: `brain add --subject` was defined but silently ignored (the
+    handler never forwarded it to `add()`); it now wires through, and
+    `brain update` gained `--subject` / `--affect` (pass `""` to clear).
+  - Known limitations: `recall_by_affect` exposes only exact emotion match
+    (no fuzzy/semantic emotion grouping) and per-dimension AND-combined bounds
+    (no OR across emotions in one call); valence/arousal/intensity are stored
+    as given and not range-validated (a frontmatter `intensity: 5` persists
+    verbatim); soft-deleted Concepts drop their affect row on rebuild (mirrors
+    the subject index), so affect is restored from `metadata` only when the
+    Concept is restored and re-indexed.
+
 ### Changed
 - **Docs surface rename: R4 M3 closed** (R4 / G23, mochu iter-13) — 9 tracked
   files renamed `drawer`/`drawers`/`Drawers` → `concept`/`concepts`/`Concepts`

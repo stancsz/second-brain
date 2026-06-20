@@ -45,6 +45,24 @@ def _short(s, n=120):
     return s[:n] + ("..." if len(s) > n else "")
 
 
+def _parse_affect_arg(raw):
+    """Parse the --affect JSON string. "" / None → None (clear/omit). A non-empty
+    value must be a JSON object; on bad input, exit with an actionable message
+    instead of a stack trace."""
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+    except json.JSONDecodeError as ex:
+        sys.exit('--affect must be valid JSON, e.g. '
+                 '\'{"emotion":"grief","valence":-0.8,"intensity":0.9}\' '
+                 f'(got: {ex})')
+    if not isinstance(val, dict):
+        sys.exit('--affect must be a JSON object of affect dimensions '
+                 '(valence/arousal/emotion/intensity)')
+    return val
+
+
 def _fmt_concept_line(i, d):
     tags = f" [{', '.join(d['tags'])}]" if d["tags"] else ""
     coll = f" [{d['collection']}]" if d["collection"] else ""
@@ -62,6 +80,7 @@ def main():
     a.add_argument("--content-file", help="read content from this file (avoids shell escaping for long content)")
     a.add_argument("--collection"); a.add_argument("--tags"); a.add_argument("--source", action="append")
     a.add_argument("--subject", help="sb_subject: the Bundle path this memory is about (e.g. /people/rox.md). Defaults to /people/self.md.")
+    a.add_argument("--affect", help='sb_affect as JSON, e.g. \'{"emotion":"grief","valence":-0.8,"arousal":0.3,"intensity":0.9}\' (any subset of dims)')
 
     s = sub.add_parser("search"); s.add_argument("query")
     s.add_argument("--collection"); s.add_argument("--tag"); s.add_argument("--limit", type=int, default=10)
@@ -72,8 +91,17 @@ def main():
     rs_sub.add_argument("subject", help="the subject path (e.g. /people/rox.md) or display name (e.g. rox)")
     rs_sub.add_argument("--limit", type=int, default=50)
 
+    ra = sub.add_parser("recall-affect", help="recall memories by structured affect (emotion / valence / arousal / intensity)")
+    ra.add_argument("--emotion", help="exact emotion label (case-insensitive), e.g. grief")
+    ra.add_argument("--min-valence", type=float); ra.add_argument("--max-valence", type=float)
+    ra.add_argument("--min-arousal", type=float); ra.add_argument("--max-arousal", type=float)
+    ra.add_argument("--min-intensity", type=float)
+    ra.add_argument("--limit", type=int, default=50)
+
     u = sub.add_parser("update"); u.add_argument("id")
     u.add_argument("--title"); u.add_argument("--content"); u.add_argument("--tags"); u.add_argument("--collection")
+    u.add_argument("--subject", help='set sb_subject (pass "" to clear, back to /people/self.md)')
+    u.add_argument("--affect", help='set sb_affect JSON (pass "" to clear)')
 
     d = sub.add_parser("delete"); d.add_argument("id"); d.add_argument("--hard", action="store_true")
     r = sub.add_parser("restore"); r.add_argument("id")
@@ -150,7 +178,9 @@ def main():
                     sys.exit("âŒ add needs either a content argument or --content-file")
                 content = args.content
             tags = [x.strip() for x in (args.tags or "").split(",") if x.strip()]
-            dr = b.add(args.title, content, args.collection, tags, args.source or [])
+            affect = _parse_affect_arg(args.affect)
+            dr = b.add(args.title, content, args.collection, tags, args.source or [],
+                       sb_subject=args.subject, sb_affect=affect)
             links = b.related(dr["id"], source="wikilink")
             msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
             if links:
@@ -191,6 +221,22 @@ def main():
                      ) if res else f"No concepts for subject '{sub_in}'."
             out({"subject": sub_in, "concepts": res}, human)
 
+        elif args.cmd == "recall-affect":
+            res = b.recall_by_affect(
+                emotion=args.emotion,
+                min_valence=args.min_valence, max_valence=args.max_valence,
+                min_arousal=args.min_arousal, max_arousal=args.max_arousal,
+                min_intensity=args.min_intensity, limit=args.limit)
+            filt = {k: v for k, v in {
+                "emotion": args.emotion, "min_valence": args.min_valence,
+                "max_valence": args.max_valence, "min_arousal": args.min_arousal,
+                "max_arousal": args.max_arousal, "min_intensity": args.min_intensity,
+            }.items() if v is not None}
+            human = (f"🎭 affect recall {filt} ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts match affect filter {filt or '(none)'}."
+            out({"filters": filt, "concepts": res}, human)
+
         elif args.cmd == "show":
             matches = [b.get(args.ident)] if b.get(args.ident) else b.get_by_title(args.ident)
             matches = [m for m in matches if m]
@@ -208,6 +254,10 @@ def main():
                          f"Collection: {dd['collection'] or '(none)'}   Tags: {', '.join(dd['tags']) or 'â€”'}\n"
                          f"Sources: {', '.join(dd['sources']) or 'â€”'}\n"
                          f"Updated: {dd['updated_at']}   ID: {dd['id']}\n\n{dd['content']}\n")
+                aff = b.affect(dd["id"])
+                if aff:
+                    dims = ", ".join(f"{k}={v}" for k, v in aff.items() if v is not None)
+                    human += f"\nðŸŽ­ Affect: {dims}"
                 if rels:
                     human += "\nðŸ”— Relations:\n" + "\n".join(
                         f"   [{r['dir']}|{r['relation_type']}|{r['source']}] {r['title']} ({r['id'][:8]})"
@@ -216,7 +266,12 @@ def main():
 
         elif args.cmd == "update":
             tags = [x.strip() for x in args.tags.split(",")] if args.tags is not None else None
-            dr = b.update(args.id, args.title, args.content, tags, args.collection)
+            kw = {}
+            if args.subject is not None:
+                kw["sb_subject"] = args.subject or None  # "" clears → default self
+            if args.affect is not None:
+                kw["sb_affect"] = _parse_affect_arg(args.affect)
+            dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
             out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 
         elif args.cmd == "delete":

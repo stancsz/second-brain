@@ -136,3 +136,25 @@ CREATE TABLE IF NOT EXISTS concept_subject (
 );
 
 CREATE INDEX IF NOT EXISTS ix_concept_subject_subject ON concept_subject(subject_id);
+
+-- ---------------------------------------------------------------------------
+-- Structured affect (G10 / R12)
+-- One row per Concept that carries an `sb_affect` mapping. Dimensions follow the
+-- circumplex model (valence/arousal in [-1,1]) plus a free-text `emotion` label
+-- and `intensity` in [0,1]. All dimensions are nullable: a memory may name an
+-- emotion without scoring it, or score valence without the rest. The row exists
+-- iff the Concept has affect — affectless Concepts have NO row. Derived from
+-- concepts.metadata.sb_affect; rebuilt by SecondBrain.rebuild_affect_index().
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS affect (
+    concept_id TEXT PRIMARY KEY,
+    valence    REAL,   -- pleasant(+1) .. unpleasant(-1)
+    arousal    REAL,   -- activated(+1) .. calm(-1 / 0)
+    emotion    TEXT,   -- free-text label, e.g. "grief", "joy"
+    intensity  REAL,   -- 0 (faint) .. 1 (overwhelming)
+    FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_affect_emotion   ON affect(emotion);
+CREATE INDEX IF NOT EXISTS ix_affect_intensity ON affect(intensity);

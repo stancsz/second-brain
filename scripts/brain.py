@@ -231,11 +231,13 @@ class SecondBrain:
     # -- CRUD ----------------------------------------------------------------
 
     def add(self, title, content, collection=None, tags=None, sources=None,
-            sb_subject=None):
+            sb_subject=None, sb_affect=None):
         did = _uuid()
         meta = {}
         if sb_subject:
             meta["sb_subject"] = sb_subject
+        if sb_affect:
+            meta["sb_affect"] = sb_affect
         self.con.execute(
             "INSERT INTO concepts (id, title, content, collection, sources, metadata) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -246,6 +248,7 @@ class SecondBrain:
         self._sync_wikilinks(did, content)
         self._resolve_pending_to(did, title)
         self._sync_subject_index_for(did)
+        self._sync_affect_for(did, sb_affect)
         self.con.commit()
         return self.get(did)
 
@@ -398,6 +401,122 @@ class SecondBrain:
         ).fetchall()
         return [self._row_to_concept(r) for r in rows]
 
+    # -- structured affect (G10 / R12) ----------------------------------------
+
+    _AFFECT_DIMS = ("valence", "arousal", "emotion", "intensity")
+
+    def _normalize_affect(self, sb_affect) -> tuple | None:
+        """Coerce an `sb_affect` mapping to a (valence, arousal, emotion, intensity)
+        tuple, or None when there is no affect to record.
+
+        Each dimension is optional: a memory may name an `emotion` without scoring
+        it, or score `valence` alone. Non-numeric scores are dropped to None rather
+        than raising — a corrupt frontmatter value must not crash a rebuild. An
+        empty / all-missing mapping yields None (→ no affect row).
+        """
+        if not sb_affect or not isinstance(sb_affect, dict):
+            return None
+
+        def _num(v):
+            if v is None or v == "":
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        valence = _num(sb_affect.get("valence"))
+        arousal = _num(sb_affect.get("arousal"))
+        intensity = _num(sb_affect.get("intensity"))
+        emotion = sb_affect.get("emotion")
+        emotion = str(emotion) if emotion not in (None, "") else None
+        if valence is None and arousal is None and intensity is None and emotion is None:
+            return None
+        return (valence, arousal, emotion, intensity)
+
+    def _sync_affect_for(self, concept_id: str, sb_affect) -> None:
+        """Upsert (or, when there is no affect, delete) one Concept's affect row."""
+        row = self._normalize_affect(sb_affect)
+        if row is None:
+            self.con.execute("DELETE FROM affect WHERE concept_id=?", (concept_id,))
+            return
+        valence, arousal, emotion, intensity = row
+        self.con.execute(
+            "INSERT INTO affect (concept_id, valence, arousal, emotion, intensity) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(concept_id) DO UPDATE SET "
+            "  valence=excluded.valence, arousal=excluded.arousal, "
+            "  emotion=excluded.emotion, intensity=excluded.intensity",
+            (concept_id, valence, arousal, emotion, intensity),
+        )
+
+    def rebuild_affect_index(self) -> int:
+        """Full re-sync of the affect table from concepts.metadata.sb_affect.
+
+        Used by bundle.rebuild() after a full import. Returns the affect-row count.
+        """
+        self.con.execute("DELETE FROM affect")
+        n = 0
+        for r in self.con.execute(
+            "SELECT id, metadata, deleted_at FROM concepts"
+        ).fetchall():
+            if r["deleted_at"]:
+                continue
+            try:
+                meta = json.loads(r["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            if self._normalize_affect(meta.get("sb_affect")) is not None:
+                self._sync_affect_for(r["id"], meta.get("sb_affect"))
+                n += 1
+        self.con.commit()
+        return n
+
+    def affect(self, concept_id: str) -> dict | None:
+        """Return the structured affect dict for a Concept, or None if it has none.
+
+        Keys: valence, arousal, emotion, intensity. Any dimension may be None.
+        """
+        r = self.con.execute(
+            "SELECT valence, arousal, emotion, intensity FROM affect WHERE concept_id=?",
+            (concept_id,),
+        ).fetchone()
+        return dict(r) if r else None
+
+    def recall_by_affect(self, emotion=None, min_valence=None, max_valence=None,
+                         min_arousal=None, max_arousal=None, min_intensity=None,
+                         limit=50) -> list[dict]:
+        """Recall live Concepts filtered by structured affect.
+
+        Categorical (`emotion`, case-insensitive exact match) and numeric range
+        bounds, all combinable. A NULL dimension never satisfies a numeric bound
+        (so a partially-scored memory is excluded from range queries it can't
+        answer). Returns full Concept dicts ordered by intensity desc (NULLs
+        last) then recency.
+        """
+        clauses, params = [], []
+        if emotion is not None:
+            clauses.append("a.emotion = ? COLLATE NOCASE"); params.append(emotion)
+        if min_valence is not None:
+            clauses.append("a.valence >= ?"); params.append(min_valence)
+        if max_valence is not None:
+            clauses.append("a.valence <= ?"); params.append(max_valence)
+        if min_arousal is not None:
+            clauses.append("a.arousal >= ?"); params.append(min_arousal)
+        if max_arousal is not None:
+            clauses.append("a.arousal <= ?"); params.append(max_arousal)
+        if min_intensity is not None:
+            clauses.append("a.intensity >= ?"); params.append(min_intensity)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = self.con.execute(
+            "SELECT c.* FROM concepts c JOIN affect a ON a.concept_id = c.id "
+            f"WHERE c.deleted_at IS NULL AND ({where}) "
+            "ORDER BY a.intensity DESC, c.updated_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._row_to_concept(r) for r in rows]
+
     def get(self, concept_id):
         row = self.con.execute(
             "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL", (concept_id,)
@@ -414,7 +533,7 @@ class SecondBrain:
         return [self._row_to_concept(r) for r in rows]
 
     def update(self, concept_id, title=None, content=None, tags=None,
-               collection=None, sources=None, sb_subject=_UNSET):
+               collection=None, sources=None, sb_subject=_UNSET, sb_affect=_UNSET):
         cur = self.get(concept_id)
         if not cur:
             return None
@@ -422,24 +541,22 @@ class SecondBrain:
         new_content = content if content is not None else cur["content"]
         new_collection = collection if collection is not None else cur["collection"]
         new_sources = sources if sources is not None else cur["sources"]
-        if sb_subject is _UNSET:
-            cur_meta = json.loads(self.con.execute(
-                "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
-            ).fetchone()["metadata"] or "{}")
-            new_sb_subject = cur_meta.get("sb_subject")
-        else:
-            new_sb_subject = sb_subject
-        # Only update metadata if sb_subject actually changed
-        cur_meta_str = self.con.execute(
+        cur_meta = json.loads(self.con.execute(
             "SELECT metadata FROM concepts WHERE id=?", (concept_id,)
-        ).fetchone()["metadata"] or "{}"
-        cur_meta = json.loads(cur_meta_str)
-        if new_sb_subject is None:
-            new_meta = {k: v for k, v in cur_meta.items() if k != "sb_subject"}
-        elif new_sb_subject:
-            new_meta = {**cur_meta, "sb_subject": new_sb_subject}
+        ).fetchone()["metadata"] or "{}")
+        # _UNSET = preserve current; None = clear; value = set. Applies to both
+        # sb_subject and sb_affect.
+        new_sb_subject = cur_meta.get("sb_subject") if sb_subject is _UNSET else sb_subject
+        new_sb_affect = cur_meta.get("sb_affect") if sb_affect is _UNSET else sb_affect
+        new_meta = dict(cur_meta)
+        if new_sb_subject:
+            new_meta["sb_subject"] = new_sb_subject
         else:
-            new_meta = cur_meta
+            new_meta.pop("sb_subject", None)
+        if new_sb_affect:
+            new_meta["sb_affect"] = new_sb_affect
+        else:
+            new_meta.pop("sb_affect", None)
         self.con.execute(
             "UPDATE concepts SET title=?, content=?, collection=?, sources=?, "
             "metadata=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -457,6 +574,9 @@ class SecondBrain:
             # Remove old link (if any) and re-link to new subject
             self.con.execute("DELETE FROM concept_subject WHERE concept_id=?", (concept_id,))
             self._sync_subject_index_for(concept_id, new_sb_subject)
+        # Re-sync affect row if sb_affect was explicitly set or cleared
+        if sb_affect is not _UNSET:
+            self._sync_affect_for(concept_id, new_sb_affect)
         self.con.commit()
         return self.get(concept_id)
 

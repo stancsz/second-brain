@@ -7,22 +7,18 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 
 | id | dimension | gap | evidence (observed) | impact | effort | confidence | score |
 |---|---|---|---|---|---|---|---|
-| G04 | features | Rename model `drawer`→`Concept` across schema/CLI/code per docs/02 | SHIPPED iter-12 (M1+M2: schema, brain.py, brain_cli.py, bundle.py, sync.py, hooks, tests). M3 (commands/, docs/, references/, CHANGELOG narrative, README.zh.md) is new gap G23. Cooldown until iter-18. | 3 | 3 | 4 | 4.0 |
-| G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | M1 SHIPPED iter-14 (subjects + concept_subject + subject_subgraph + subjects() + CLI + 6 tests + verifier); M2/M3 OPEN | 5 | 4 | 4 | 5.0 |
+| G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | M1 SHIPPED iter-14 (subjects + concept_subject + subject_subgraph + subjects() + CLI + 6 tests + verifier); R10 satisfied, M2/M3 are non-release enhancements (grouping, FK cascade, humanization) | 3 | 4 | 4 | 3.0 |
 | G09 | features | Temporal validity (`sb_valid_from/to`, `sb_supersedes`) + `--as-of` recall (Zep parity) | Zep/Graphiti v0.29.2 ships bi-temporal at MCP parity; we don't | 5 | 4 | 4 | 5.0 |
-| G10 | features | Structured affect (`sb_affect`) + affect table | Needed for emotional mimic agents; not built | 4 | 3 | 4 | 5.33 |
 | G11 | features | `Backend` interface + S3/GCS adapters (one-way mirror) | "any cloud db / s3 / gcs" requested; none exist | 4 | 4 | 4 | 4.0 |
 | G12 | features | Google Drive / OneDrive backup adapters (MCP-first) | Requested; MCP connectors available in session | 4 | 4 | 3 | 3.0 |
 | G13 | trust | Selective-by-tag encryption (age) for private/psych Concepts before push | Psych data would hit remotes in plaintext otherwise | 5 | 4 | 3 | 3.75 |
-| G14 | docs | SKILL.md + README updated to OKF terminology & new capabilities | SHIPPED iter-9 | 3 | 2 | 4 | 6.0 |
 | G15 | reliability | Hook + OS-scheduler install (`install.sh`) for scheduled sync | install.sh has no scheduler entry | 3 | 3 | 3 | 3.0 |
 | G16 | performance | Incremental (mtime-based) rebuild for large Bundles | Full walk only; risk at scale | 2 | 3 | 3 | 2.0 |
 | G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned; G09 migration story must be back-compat | 4 | 3 | 4 | 5.33 |
 | G18 | features | Mem0-style preference-consolidation (update existing memory on correction vs duplicate) | Mem0 OpenCode v0.2.0 (2026-06-17) ships gated auto-dream in production — concrete reference impl | 3 | 3 | 3 | 3.0 |
 | G19 | reliability | ~~Recall hook misses morphological matches~~ RESOLVED as output-encoding crash (cp1252 swallowed emoji print → empty stdout) | hook now reconfigures stdout to UTF-8; recall block reaches the model under cp1252; filler still silent | 4 | 3 | 4 | 5.33 |
-| G20 | trust | OKF spec conformance: verify `okf_version` lives in bundle-root `index.md` frontmatter, NOT as a separate file (per OKF v0.1 SPEC.md refetched iter-8) | SHIPPED iter-10 | 3 | 1 | 4 | 12.0 |
 | G21 | docs | README.zh.md parity for G14 — translate OKF v0.1, Concept (概念), git-sync, psychological-memory sections to Chinese | README.zh.md still says "笔记(Drawer)", "5 万条笔记" and does not mention OKF/sync/psych | 3 | 2 | 4 | 6.0 |
-| G23 | docs | SHIPPED iter-13 (R4 M3 done; R4 complete). 9 tracked files renamed; 02-okf table restructured; architecture.md title v3.0. New gap G24: untracked docs/ files still have drawer refs (separate hygiene). Cooldown until iter-19. | 3 | 2 | 5 | 7.5 |
+| G24 | docs | Untracked docs/ files (08-iter7-findings, HANDOFF, brief, decisions/D001, tasks/T002) still have `drawer` refs | docs-surface-rename verifier scopes to git-tracked files; these are untracked | 2 | 1 | 4 | 8.0 |
 
 ## Shipped
 | id | dimension | shipped | note |
@@ -39,6 +35,8 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G22 | trust | iter-11 | R14 secret-history + config-shape secret scan (15,804 history lines + tracked *.toml/*.ini/*.yaml/*.yml/*.env; 0 leaks); 0 config files in this repo, the sync.toml half of R14 is locked in for when the config exists. Cooldown until iter-17. |
 | G04 | features | iter-12 | Schema + code rename `drawers`→`concepts` (M1+M2 of R4): schema.sql v3.0, brain.py uses concept/concepts everywhere except intentional old-name references in `_migrate_v21_to_concepts()`, brain_cli.py/bundle.py/sync.py/capture_conversation.py/recall_memories.py/test_brain.py/test_capture_hook.py/test_recall_hook.py all use new vocabulary. Auto-migration of v2.1 brain.db in-place (table rename + FTS5 rebuild + trigger replacement). Verifier schema-rename (red→green; 8 sub-checks). 51/51 test_brain.py tests pass; full mochu corpus 12/12 green; ship_gate PASS. Cooldown until iter-18. |
 | G23 | docs | iter-13 | R4 M3 (docs surface rename) done: 9 tracked files renamed across commands/, docs/, references/, README.zh.md. Total 59 hits. `docs/02-okf-and-terminology.md` comparison table restructured (was showing "Old: drawer → New: Concept" — after rename, the old column said the same as the new, which would silently mislead readers; now describes current canonical state with historical context in prose). `references/architecture.md` title updated v2.1 → v3.0 to match the body (body now describes v3.0 schema). `docs-surface-rename` verifier: 13 in-scope files scanned, 0 residual hits. corpus 13/13 green; ship_gate PASS; R4 complete. Cooldown until iter-19. |
+| G08 | features | iter-14 | R10 satisfied (M1): subjects + concept_subject + subject_subgraph() + subjects() + recall-subject CLI; M2/M3 (grouping, humanization) are non-release enhancements. Cooldown until iter-20. |
+| G10 | features | iter-15 | R12 satisfied: typed `affect` table (valence/arousal/emotion/intensity, FK ON DELETE CASCADE) populated by bundle.rebuild + live add/update; `affect(id)` getter + `recall_by_affect()` categorical/range/combined queries; `brain recall-affect` CLI + `--affect` capture; show prints affect. Fixed latent G08 bug (`add --subject` defined-but-unwired). Verifier affect-persist (corpus 15/15); 7 new tests (116→123). Cooldown until iter-21. |
 
 ## Parked
 _(none yet)_

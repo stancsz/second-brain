@@ -760,6 +760,84 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(subs["/people/rox.md"], 2)
         self.assertEqual(subs["/people/alex.md"], 1)
 
+    # -----------------------------------------------------------------------
+    # Structured affect (G10 / R12)
+    # -----------------------------------------------------------------------
+
+    def test_affect_persists_and_reads_back(self):
+        """add(sb_affect=...) stores a typed affect row; affect(id) returns it."""
+        dr = self.b.add("Grief", "the funeral", collection="episodes",
+                        sb_affect={"valence": -0.8, "arousal": 0.3,
+                                   "emotion": "grief", "intensity": 0.9})
+        self.assertEqual(
+            self.b.affect(dr["id"]),
+            {"valence": -0.8, "arousal": 0.3, "emotion": "grief", "intensity": 0.9})
+
+    def test_affect_absent_returns_none_and_no_row(self):
+        """A concept without sb_affect has no affect row and affect(id) is None."""
+        dr = self.b.add("Plain", "no feelings here", collection="notes")
+        self.assertIsNone(self.b.affect(dr["id"]))
+        row = self.b.con.execute(
+            "SELECT 1 FROM affect WHERE concept_id=?", (dr["id"],)).fetchone()
+        self.assertIsNone(row)
+
+    def test_affect_partial_keeps_null_dims(self):
+        """Emotion-only affect stores the label with numeric dims left NULL."""
+        dr = self.b.add("Curious", "what's that?", collection="notes",
+                        sb_affect={"emotion": "curiosity"})
+        a = self.b.affect(dr["id"])
+        self.assertEqual(a["emotion"], "curiosity")
+        self.assertIsNone(a["valence"])
+        self.assertIsNone(a["intensity"])
+
+    def test_recall_by_affect_emotion_and_range(self):
+        """recall_by_affect answers categorical + numeric-range queries exactly."""
+        self.b.add("G1", "b", collection="e",
+                   sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9})
+        self.b.add("G2", "b", collection="e",
+                   sb_affect={"emotion": "grief", "valence": -0.6, "intensity": 0.6})
+        self.b.add("J1", "b", collection="e",
+                   sb_affect={"emotion": "joy", "valence": 0.9, "intensity": 0.85})
+        self.assertEqual(
+            sorted(c["title"] for c in self.b.recall_by_affect(emotion="grief")),
+            ["G1", "G2"])
+        self.assertEqual(
+            sorted(c["title"] for c in self.b.recall_by_affect(min_intensity=0.8)),
+            ["G1", "J1"])
+        self.assertEqual(
+            [c["title"] for c in self.b.recall_by_affect(emotion="grief",
+                                                         min_intensity=0.8)],
+            ["G1"])
+
+    def test_recall_by_affect_null_dim_excluded_from_range(self):
+        """A partial-affect row (NULL intensity) never satisfies a numeric bound."""
+        self.b.add("Partial", "b", collection="e", sb_affect={"emotion": "awe"})
+        self.assertEqual(self.b.recall_by_affect(min_intensity=0.0), [])
+
+    def test_update_sets_and_clears_affect(self):
+        """update(sb_affect=...) sets affect; update(sb_affect=None) clears it;
+        omitting sb_affect preserves it."""
+        dr = self.b.add("E", "b", collection="e",
+                        sb_affect={"emotion": "joy", "intensity": 0.6})
+        # preserve on unrelated update
+        self.b.update(dr["id"], title="E2")
+        self.assertEqual(self.b.affect(dr["id"])["emotion"], "joy")
+        # change
+        self.b.update(dr["id"], sb_affect={"emotion": "calm", "intensity": 0.2})
+        self.assertEqual(self.b.affect(dr["id"])["emotion"], "calm")
+        # clear
+        self.b.update(dr["id"], sb_affect=None)
+        self.assertIsNone(self.b.affect(dr["id"]))
+
+    def test_affect_fk_cascade_on_hard_delete(self):
+        """Hard-deleting a concept removes its affect row (ON DELETE CASCADE)."""
+        dr = self.b.add("Doomed", "b", collection="e",
+                        sb_affect={"emotion": "dread", "intensity": 0.7})
+        self.b.con.execute("DELETE FROM concepts WHERE id=?", (dr["id"],))
+        self.b.con.commit()
+        self.assertIsNone(self.b.con.execute(
+            "SELECT 1 FROM affect WHERE concept_id=?", (dr["id"],)).fetchone())
+
 
 if __name__ == "__main__":
     unittest.main()

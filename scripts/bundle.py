@@ -309,6 +309,9 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
     # concepts.metadata. This is the R10 path: a persona sub-graph query must
     # be correct after a bundle rebuild, with no separate state to keep aligned.
     brain.rebuild_subject_index()
+    # Re-sync the derived affect index (R12) from concepts.metadata.sb_affect, so
+    # recall_by_affect() is correct after a rebuild with no separate state.
+    brain.rebuild_affect_index()
     brain.con.commit()
     return brain
 

@@ -11,18 +11,18 @@ m = lambda *p: os.path.join(root, ".mochu", *p)
 wips = sorted(glob.glob(m("wip", "*.md")))
 if wips:
     w = os.path.splitext(os.path.basename(wips[0]))[0]
-    cur = next((l.strip() for l in open(wips[0]) if l.lower().startswith("current")), "")
+    cur = next((l.strip() for l in open(wips[0], encoding="utf-8") if l.lower().startswith("current")), "")
     print(f"{w} [WIP] resume open chain — {cur} (WIP preempts all new gaps)"); sys.exit(0)
 
 cool = set()
 if os.path.exists(m("cooldown.md")):
-    for l in open(m("cooldown.md")):
+    for l in open(m("cooldown.md"), encoding="utf-8"):
         t = l.split("(")[0].strip().lower()
         if t and not t.startswith("#"): cool.add(t)
 
-release = open(m("RELEASE.md")).read().lower() if os.path.exists(m("RELEASE.md")) else ""
+release = open(m("RELEASE.md"), encoding="utf-8").read().lower() if os.path.exists(m("RELEASE.md")) else ""
 rows = []
-for l in open(m("gaps.md")):
+for l in open(m("gaps.md"), encoding="utf-8"):
     if not l.strip().startswith("|") or "---" in l: continue
     c = [x.strip() for x in l.strip().strip("|").split("|")]
     if len(c) < 8 or c[0].lower() == "id" or "~~" in c[0] or "shipped" in c[0].lower(): continue
