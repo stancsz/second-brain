@@ -1,4 +1,4 @@
-# Competitors — last recon: 2026-06-19 (iter-8 refresh)
+# Competitors — last recon: 2026-06-20 (iter-16 refresh)
 
 The space splits into two domains SecondBrain straddles: **agent memory layers** and **human PKM /
 note tools**. SecondBrain's wedge is the crossover (markdown-as-substrate that both human and agent use).
@@ -98,7 +98,61 @@ WebFetch was used instead.
    OKF-as-truth story is the carrying argument; the docs need to make it explicit (G14/R15 work).
 5. **OKF spec drift watch**: our G03 verifier needs to confirm `okf_version` placement. Log as G20.
 
+## Recon — 2026-06-20 (iter-16)
+
+WebFetch backend was erroring this iter (backing model "MiniMax-M2.7" unavailable);
+WebSearch worked and was used instead. Calendar gap since last recon is only 1 day,
+so most changelogs had not moved — the signal this iter is a **Mem0 architecture
+shift** confirmed via their own 2026 blog/docs, plus reconfirmation of the Zep bar.
+
+### Deltas since iter-8 (2026-06-19)
+
+**Mem0 — graph store deprecated, replaced by entity-linking-for-ranking**
+- Mem0 **removed the external graph store (Mem0g)** from the OSS algorithm. In its
+  place: during `add()`, entities are extracted and stored in a parallel
+  `{collection}_entities` collection; at search time, query entities are matched
+  and **boost** the combined score. **This is NOT a queryable graph traversal API**
+  — relationships are used indirectly for ranking only.
+- Retrieval is now **three-signal fusion**: semantic similarity + BM25 keyword +
+  entity-match, normalized and fused into one score.
+- (Graph traversal is still possible only by bolting on an external store, e.g.
+  Amazon Neptune Analytics — i.e. pay/self-host, not in the core.)
+- Sources: [Mem0 State of AI Agent Memory 2026](https://mem0.ai/blog/state-of-ai-agent-memory-2026),
+  [Mem0 Graph Memory docs](https://docs.mem0.ai/platform/features/graph-memory).
+
+**Zep / Graphiti — no new release surfaced; bar unchanged**
+- No release newer than v0.29.2 (iter-8) found. Bi-temporal model reconfirmed:
+  per-fact **validity windows** (valid-from / valid-to), contradiction **closes**
+  the old window rather than deleting (history stays queryable), point-in-time
+  queries, and **provenance** (every fact traces to its source episode).
+- Source: [getzep/graphiti](https://github.com/getzep/graphiti),
+  [Zep temporal knowledge graph](https://www.getzep.com/ai-agents/temporal-knowledge-graph/).
+
+### Strategic implications for our backlog
+
+1. **Our queryable graph is now MORE differentiated, not less.** Mem0 — the
+   category leader — just retreated from graph-as-API to entity-boost-for-ranking.
+   SecondBrain keeps a real, local, queryable relation graph (`relations`,
+   `traverse`, subject sub-graphs G08, affect queries G10). The OKF-as-truth +
+   queryable-graph story is the wedge; docs should say so (R15/G14 already does
+   the foundation, but the "vs Mem0's 2026 entity-linking retreat" framing is new).
+2. **Multi-signal retrieval is the emerging bar, and we only have one signal at
+   rank time.** `brain search` is FTS5 (BM25-class keyword) only; the wikilink
+   relation graph exists but does NOT influence search ranking, and there is no
+   semantic layer. Mem0 fuses three signals. **New gap G25**: graph-aware search
+   boost — re-rank FTS hits by relation-graph proximity to other hits / to a
+   seed. This is achievable **dependency-free** (pure graph traversal over
+   `relations`, no embeddings), unlike a semantic-embedding signal (which would
+   break the stdlib-only core and belongs behind an optional adapter if ever).
+3. **G09 (`--as-of` recall) remains the highest-value release-linked gap.** Zep's
+   bi-temporal bar is unchanged; our `sb_valid_from/to` + `sb_supersedes` design
+   covers the core point-in-time case. Next non-recon iter should target it.
+4. **Provenance**: Zep traces every fact to its source episode; we have per-Concept
+   `sources` (URLs) but not "which conversation/episode produced this Concept."
+   Minor; not a gap yet — note for when Episode types mature.
+
 ## Recon cadence
 - Bootstrap: 2026-06-18
 - Refresh 1: 2026-06-19 (iter-8)
-- Next: iter-16 or when 30+ days stale, whichever is sooner.
+- Refresh 2: 2026-06-20 (iter-16)
+- Next: iter-24 or when 30+ days stale, whichever is sooner.

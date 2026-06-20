@@ -19,6 +19,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G19 | reliability | ~~Recall hook misses morphological matches~~ RESOLVED as output-encoding crash (cp1252 swallowed emoji print → empty stdout) | hook now reconfigures stdout to UTF-8; recall block reaches the model under cp1252; filler still silent | 4 | 3 | 4 | 5.33 |
 | G21 | docs | README.zh.md parity for G14 — translate OKF v0.1, Concept (概念), git-sync, psychological-memory sections to Chinese | README.zh.md still says "笔记(Drawer)", "5 万条笔记" and does not mention OKF/sync/psych | 3 | 2 | 4 | 6.0 |
 | G24 | docs | Untracked docs/ files (08-iter7-findings, HANDOFF, brief, decisions/D001, tasks/T002) still have `drawer` refs | docs-surface-rename verifier scopes to git-tracked files; these are untracked | 2 | 1 | 4 | 8.0 |
+| G25 | features | Graph-aware search ranking — re-rank FTS hits by relation-graph proximity (boost concepts linked to other strong hits / a seed) | Observed iter-16: `brain.search()` uses `ORDER BY rank` (FTS5 BM25) ONLY; the `relations` graph never influences ranking. Mem0's 2026 retrieval fuses keyword + entity-match; we have the graph but don't use it at rank time. Achievable dependency-free (traversal over existing `relations`); a semantic-embedding signal would break stdlib-only and belongs in an optional adapter, NOT this gap | 3 | 2 | 4 | 6.0 |
 
 ## Shipped
 | id | dimension | shipped | note |
@@ -96,3 +97,9 @@ _(none yet)_
 ### G20: OKF Spec Conformance (okf_version)
 * **Method:** Ensure `bundle.py` writes the `okf_version: "0.1"` directly inside the root `index.md`'s frontmatter block and ensure that the parser skips index/log documents when importing.
 * **Agent Build Rationale:** Highly constrained bug fix. The agent merely needs to adjust string formatting in `bundle.py` and add an `if file == 'index.md'` check in the parser, which is immediately verifiable against the OKF specification.
+
+### G25: Graph-aware search ranking (logged iter-16 recon)
+* **Observed:** `brain.py:search()` is `SELECT ... FROM concepts_fts ... ORDER BY rank LIMIT ?` — pure FTS5 BM25. The `relations` graph (wikilinks + manual edges) and `traverse()` exist but are never consulted at rank time. Mem0's 2026 OSS retrieval fuses keyword + entity-match into one score; SecondBrain has the richer graph but doesn't use it to rank.
+* **Method (dependency-free):** Keep FTS5 as the candidate generator; after fetching the top-N FTS hits, compute a graph-proximity boost — e.g. a hit linked (1–2 hops over `relations`) to other hits in the same result set, or to an optional `--seed <id>`, gets its score lifted. Re-rank in Python. No embeddings, no new deps. Expose as `search(..., boost_graph=True)` or a `--rerank` flag; default behavior unchanged unless opted in (so existing search-dependent verifiers stay green).
+* **Verifier sketch:** Build a brain where concept A and B both weakly match a query, A is graph-linked to a strong hit C (also matching) and B is isolated; assert that with graph-boost on, A ranks above B, and with it off, the BM25 order is preserved. Discriminates a real re-rank from a no-op.
+* **NOT in scope:** semantic/embedding similarity (breaks stdlib-only core; would be an optional lazy-imported adapter, a separate gap).
