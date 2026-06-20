@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+- **Selective-by-tag encryption for private Concepts** (R13 / G13, mochu iter-22)
+  — Concepts that are private (tag `private`/`psych`, or OKF `type`
+  `Episode`/`RelationshipModel`) are now encrypted before they enter the OKF
+  Bundle that git pushes, while public Concepts stay plaintext and diffable. New
+  optional adapter `scripts/crypto.py` (Fernet via a **lazy-imported**
+  `cryptography` — the stdlib-only core never imports it). On `export`, a private
+  Concept's whole OKF document is encrypted into a minimal envelope (`type`,
+  `sb_id`, `sb_encrypted: fernet` + ciphertext) and is **excluded from
+  `index.md`/`log.md`** so its title never leaks; on `rebuild` it is transparently
+  decrypted (all `sb_*` psych fields round-trip). Encryption is **opt-in**: it
+  engages only when a key is configured (`$SECONDBRAIN_KEY_FILE` or
+  `~/.secondbrain/secret.key`, created by `python scripts/crypto.py init`).
+  Without a key, private Concepts export as plaintext but a **warning** is emitted
+  (never silent); with `SECONDBRAIN_REQUIRE_ENCRYPTION=1`, export **refuses** to
+  write private plaintext at all (the no-leak guarantee). Encryption is
+  **idempotent** — an unchanged private Concept keeps its existing ciphertext, so
+  there is no git churn on re-sync. New tests in `tests/test_crypto.py`; verifier
+  `selective-encryption` (corpus 21/21). **Closes R13.**
+
 ### Fixed
 - **Validity window coherence** (G32 / reliability, hardens R11, mochu iter-21) —
   a backwards window (`valid_from` after `valid_to`) was storable; it can never

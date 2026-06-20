@@ -14,13 +14,49 @@ so the round-trip stays lossless without a schema change.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
 import okf
+import crypto
 from brain import SecondBrain, _uuid  # noqa: F401
 
 RESERVED = {"index", "log"}
+
+
+def _encrypted_markdown(concept: dict, plaintext_md: str) -> str:
+    """Wrap a private Concept's full OKF markdown in a minimal plaintext envelope
+    whose body is the Fernet ciphertext. Only routing identity (type, sb_id) stays
+    visible; title, body, and every sb_* field live inside the ciphertext. The
+    envelope is itself a valid OKF document so the Bundle still indexes/rebuilds.
+    `crypto.encrypt` raises EncryptionUnavailable if no backend/key — by design,
+    so a refusal aborts export before any plaintext is written."""
+    token = crypto.encrypt(plaintext_md)
+    typ = concept.get("type") or "Note"
+    return (f"---\n"
+            f"type: {typ}\n"
+            f"sb_id: {concept['sb_id']}\n"
+            f"{crypto.MARKER}: {crypto.SCHEME}\n"
+            f"---\n\n{token}\n")
+
+
+def _maybe_decrypt(text: str) -> str:
+    """If `text` is an encrypted Concept envelope (sb_encrypted marker in its
+    frontmatter), decrypt the ciphertext body back to the original OKF markdown.
+    Otherwise return it unchanged. Raises EncryptionUnavailable if a key is needed
+    but absent — a rebuild must not silently drop private Concepts."""
+    head = text[:400]
+    if f"\n{crypto.MARKER}:" not in ("\n" + head):
+        return text
+    # frontmatter is delimited by the first two '---' lines; body is the token
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return text
+    front, body = parts[1], parts[2]
+    if f"{crypto.MARKER}:" not in front:
+        return text
+    return crypto.decrypt(body.strip())
 
 
 def _unlink_retry(p, attempts=10):
@@ -156,21 +192,63 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
     bundle_dir.mkdir(parents=True, exist_ok=True)
     rows = brain.con.execute("SELECT * FROM concepts ORDER BY created_at").fetchall()
 
+    # Encryption is OPT-IN: it engages only when a key is configured
+    # (crypto.available()). Without a key, private Concepts are exported as
+    # plaintext (legacy behavior) but a warning is emitted — UNLESS the user has
+    # set SECONDBRAIN_REQUIRE_ENCRYPTION, in which case export REFUSES rather than
+    # write private plaintext (the production-grade no-leak guarantee).
+    enc_on = crypto.available()
+    require_enc = str(os.environ.get("SECONDBRAIN_REQUIRE_ENCRYPTION", "")).lower() \
+        in ("1", "true", "yes", "on")
+    plaintext_private = 0
+
     used: set = set()
-    desired: dict = {}    # sb_id -> (actual_rel, text)
+    # sb_id -> (actual_rel, plaintext_md, enc_meta).  enc_meta is None for a file
+    # written verbatim, or (type, sb_id) for one to be encrypted at write time.
+    desired: dict = {}
     entries = []          # live concepts only -> index/log
     for row in rows:
         concept = _concept_to_concept(brain, row)
         deleted = bool(concept.get("sb_deleted"))
         rel = _unique_path(concept, used)             # live-style path
         actual = f".trash/{rel}" if deleted else rel   # tombstones under .trash/
-        desired[concept["sb_id"]] = (actual, okf.to_markdown(concept))
-        if not deleted:
+        text = okf.to_markdown(concept)
+        enc_meta = None
+        if crypto.is_private(concept):
+            if enc_on:
+                # Mark for encryption; the actual encrypt happens in the write
+                # loop so it can be skipped when the plaintext is unchanged
+                # (Fernet tokens are non-deterministic — re-encrypting every run
+                # would churn git on every sync).
+                enc_meta = (concept.get("type") or "Note", concept["sb_id"])
+            elif require_enc:
+                # Refuse BEFORE any file is written, so a refusal never leaves
+                # private plaintext behind (the no-leak guarantee).
+                raise crypto.EncryptionUnavailable(
+                    f"Concept {concept['sb_id'][:8]} ({concept.get('title')!r}) is "
+                    f"private but no encryption key is configured and "
+                    f"SECONDBRAIN_REQUIRE_ENCRYPTION is set - refusing to export it as "
+                    f"plaintext. Run `python scripts/crypto.py init` first.")
+            else:
+                plaintext_private += 1
+        desired[concept["sb_id"]] = (actual, text, enc_meta)
+        # Encrypted Concepts are excluded from the plaintext index.md / log.md so
+        # their title + snippet never leak into the pushed bundle.
+        if not deleted and enc_meta is None:
             entries.append({
                 "rel": rel, "title": concept["title"], "desc": _description(concept),
                 "collection": (concept.get("collection") or "").strip("/"),
                 "date": _iso_date(row["updated_at"]),  # updated_at is round-trip-stable
             })
+
+    if plaintext_private and not enc_on:
+        import sys as _sys
+        # ASCII-only: child stderr is cp1252 on Windows; a non-ASCII char here
+        # would crash a UTF-8 reader of this process's stderr (the G19 class of bug).
+        print(f"warning: {plaintext_private} private Concept(s) exported as PLAINTEXT "
+              f"- no encryption key configured. Run `python scripts/crypto.py init` to "
+              f"encrypt them, or set SECONDBRAIN_REQUIRE_ENCRYPTION=1 to refuse instead.",
+              file=_sys.stderr)
 
     # Map the current bundle: sb_id -> existing rel path.
     current: dict = {}
@@ -184,14 +262,29 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
             current[sbid] = rel
 
     # Apply desired state: move/write only what changed.
-    for sbid, (actual, text) in desired.items():
+    for sbid, (actual, plaintext, enc_meta) in desired.items():
         old = current.get(sbid)
         if old and old != actual:
             _unlink_retry(bundle_dir / old)            # e.g. live -> .trash move
         target = bundle_dir / actual
-        if (not target.exists()) or target.read_text(encoding="utf-8") != text:
+        if enc_meta is not None:
+            # Idempotent encryption: if the existing file already decrypts to this
+            # exact plaintext, leave its (stable) ciphertext untouched so an
+            # unchanged private Concept produces no git churn. Only re-encrypt
+            # when the plaintext actually changed.
+            if target.exists():
+                try:
+                    if _maybe_decrypt(target.read_text(encoding="utf-8")) == plaintext:
+                        continue
+                except Exception:
+                    pass  # unreadable/old-key envelope — re-encrypt fresh below
+            typ, sid = enc_meta
+            out_text = _encrypted_markdown({"type": typ, "sb_id": sid}, plaintext)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
+            target.write_text(out_text, encoding="utf-8")
+        elif (not target.exists()) or target.read_text(encoding="utf-8") != plaintext:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(plaintext, encoding="utf-8")
     # Remove files whose concept no longer exists in the db (local hard-delete).
     for sbid, rel in current.items():
         if sbid not in desired:
@@ -281,7 +374,10 @@ def rebuild(bundle_dir, db_path) -> SecondBrain:
         # Tombstones live under .trash/; strip the prefix so the original
         # collection is recovered from the path (sb_deleted drives the state).
         parse_path = rel[len(".trash/"):] if rel.startswith(".trash/") else rel
-        concepts.append(okf.from_markdown(f.read_text(encoding="utf-8"), path=parse_path))
+        # Decrypt private Concept envelopes back to their original OKF markdown
+        # before parsing (no-op for plaintext Concepts).
+        raw = _maybe_decrypt(f.read_text(encoding="utf-8"))
+        concepts.append(okf.from_markdown(raw, path=parse_path))
 
     # Insert all concepts first (so wikilink resolution sees the full set).
     for c in concepts:

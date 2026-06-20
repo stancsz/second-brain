@@ -22,7 +22,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 - [x] R12 Structured affect persists and is queryable per Concept — verifier: affect-persist (G10) — DONE iter-15 (typed `affect` table populated via bundle.rebuild + live add/update; `affect(id)` typed getter; `recall_by_affect()` categorical + numeric-range + combined queries; FK ON DELETE CASCADE; `brain recall-affect` CLI; round-trip stable)
 
 ## Trust
-- [ ] R13 `private`/`psych`/`Episode`/`RelationshipModel` Concepts are ciphertext on the remote; plaintext notes stay diffable — verifier: selective-encryption (G13)
+- [x] R13 `private`/`psych`/`Episode`/`RelationshipModel` Concepts are ciphertext on the remote; plaintext notes stay diffable — verifier: selective-encryption (G13) — DONE iter-22 (opt-in Fernet via lazy `cryptography`; private Concepts encrypted into a minimal OKF envelope on export, excluded from index.md/log.md, decrypted on rebuild; idempotent — no git churn on unchanged; strict `SECONDBRAIN_REQUIRE_ENCRYPTION` refuses to write private plaintext, default no-key path warns and never silently leaks)
 - [x] R14 No secrets ever committed; sync.toml secrets via env/keyring — verifier: secret-scan (ship_gate) — DONE iter-11 (ship_gate's diff scan + G22's git-history + config-shape scan together cover both halves)
 
 ## Docs
