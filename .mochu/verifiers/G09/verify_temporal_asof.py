@@ -15,7 +15,9 @@ Phases:
   7. Optional FTS query filter with as-of
   8. CLI subprocess: `brain recall --as-of <date>` end-to-end
 """
-import subprocess, sys, json, tempfile, pathlib, os, textwrap
+import subprocess, sys, json, tempfile, pathlib, os, textwrap, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # ── locate project root ──────────────────────────────────────────────────────
 HERE = pathlib.Path(__file__).resolve()
@@ -146,16 +148,16 @@ print("Phase 7: FTS query filter combined with as-of")
 with tempfile.TemporaryDirectory() as tmp:
     b = make_brain(tmp)
 
-    b.add("Weather note", "sunny in NYC today", sb_valid_from="2020-01-01", sb_valid_to="2022-01-01")
-    b.add("Weather note current", "still sunny in NYC", sb_valid_from="2022-01-01")
+    b.add("WX-past", "sunny in NYC back then", sb_valid_from="2020-01-01", sb_valid_to="2022-01-01")
+    b.add("WX-current", "still sunny in NYC today", sb_valid_from="2022-01-01")
     b.add("Unrelated note", "something else entirely")
 
-    # as-of 2020-06-01, query "NYC" → only the 2020-era weather note
+    # as-of 2020-06-01, query "NYC" → only WX-past (WX-current's valid_from=2022 not yet reached)
     hits = b.recall_as_of("2020-06-01", query="NYC")
     titles = [h["title"] for h in hits]
-    chk("FTS+as-of returns matching live note", any("today" in t for t in titles),
+    chk("FTS+as-of returns matching live note", "WX-past" in titles,
         f"titles={titles}")
-    chk("FTS+as-of excludes not-yet-valid note", not any("current" in t for t in titles),
+    chk("FTS+as-of excludes not-yet-valid note", "WX-current" not in titles,
         f"titles={titles}")
 
     b.con.close()
@@ -166,28 +168,29 @@ cli = ROOT / "scripts" / "brain_cli.py"
 
 with tempfile.TemporaryDirectory() as tmp:
     db = str(pathlib.Path(tmp) / "brain.db")
-    env = {**os.environ, "BRAIN_DB": db}
 
     def cli_run(*args):
+        # Always inject --db before the subcommand to target the temp DB
+        argv = list(args)
+        # Insert --db <path> at position 0 (before any global flags or subcommand)
         return subprocess.run(
-            [sys.executable, str(cli)] + list(args),
-            capture_output=True, text=True, env=env
+            [sys.executable, str(cli), "--db", db] + argv,
+            capture_output=True, text=True, encoding="utf-8"
         )
 
     # seed: add a NYC fact with a window, then supersede with SF
-    r = cli_run("add", "Residence", "New York City",
+    r = cli_run("--json", "add", "Residence", "New York City",
                 "--valid-from", "2015-01-01", "--collection", "Facts")
     if r.returncode != 0:
         chk("CLI add NYC", False, r.stderr[:200])
     else:
-        # parse the id from the JSON output (add emits JSON by default)
-        out = r.stdout.strip()
         try:
-            nyc_id = json.loads(out)["id"]
+            nyc_id = json.loads(r.stdout.strip())["id"]
         except Exception:
-            # fallback: search for it
-            sr = cli_run("search", "New York City", "--json")
-            nyc_id = json.loads(sr.stdout)["results"][0]["id"] if sr.returncode == 0 else None
+            # fallback: search returns a list directly
+            sr = cli_run("--json", "search", "New York City")
+            rows = json.loads(sr.stdout) if sr.returncode == 0 else []
+            nyc_id = rows[0]["id"] if rows else None
 
         if nyc_id:
             # supersede via update (close old, add new)
