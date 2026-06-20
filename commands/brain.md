@@ -49,12 +49,16 @@ Match the user's phrasing to the right subcommand. If they say:
     (any subset of the four dimensions). `brain show <id>` prints the affect line.
 - Temporal facts that change over time → give them a validity window.
   - Capture: `brain add "<title>" "<content>" --valid-from 2020-01-01 [--valid-to 2023-06-01]`.
-    A fact with no window is treated as valid since creation, still valid.
+    A fact with no window is treated as valid for all time (no lower-bound restriction).
   - When a fact is corrected/replaced, don't overwrite — **supersede** it:
     `SecondBrain.supersede(old_id, "<new title>", "<new content>", as_of="2023-06-01")`
     closes the old fact's window at `as_of` and adds the new fact linked to it,
-    keeping the old one as history. `brain show <id>` prints the `⏳ Valid:`
-    window. (Point-in-time `recall --as-of <date>` lands in the next iteration.)
+    keeping the old one as history. `brain show <id>` prints the `⏳ Valid:` window.
+  - **Point-in-time recall**: `brain recall --as-of <date> [query]` returns only the
+    Concepts whose validity window contains that date. Timeless facts (no window) appear
+    in all queries. Example: `brain recall --as-of 2021-06-01 "home city"` returns the
+    NYC note, not the SF note (after a supersession at 2023-09-01). Exclusive upper
+    bound: a fact with `valid_to=2023-01-01` is NOT returned at `as_of=2023-01-01`.
 
 ## Output rules
 

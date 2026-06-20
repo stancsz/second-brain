@@ -94,6 +94,13 @@ def main():
     rs_sub.add_argument("subject", help="the subject path (e.g. /people/rox.md) or display name (e.g. rox)")
     rs_sub.add_argument("--limit", type=int, default=50)
 
+    rec = sub.add_parser("recall", help="point-in-time recall: return facts valid at a given date")
+    rec.add_argument("--as-of", required=True, metavar="DATE",
+                     help="ISO date (e.g. 2023-06-01) — return only facts whose validity window contains this date")
+    rec.add_argument("query", nargs="?", default=None, help="optional FTS query to narrow results")
+    rec.add_argument("--collection", help="restrict to one collection")
+    rec.add_argument("--limit", type=int, default=50)
+
     ra = sub.add_parser("recall-affect", help="recall memories by structured affect (emotion / valence / arousal / intensity)")
     ra.add_argument("--emotion", help="exact emotion label (case-insensitive), e.g. grief")
     ra.add_argument("--min-valence", type=float); ra.add_argument("--max-valence", type=float)
@@ -228,6 +235,17 @@ def main():
                      "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
                      ) if res else f"No concepts for subject '{sub_in}'."
             out({"subject": sub_in, "concepts": res}, human)
+
+        elif args.cmd == "recall":
+            res = b.recall_as_of(args.as_of, query=args.query,
+                                 collection=args.collection, limit=args.limit)
+            header = f"⏳ as-of {args.as_of}"
+            if args.query:
+                header += f"  query={args.query!r}"
+            human = (f"{header}  ({len(res)} concepts)\n\n" +
+                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     ) if res else f"No concepts valid at {args.as_of}."
+            out({"as_of": args.as_of, "query": args.query, "concepts": res}, human)
 
         elif args.cmd == "recall-affect":
             res = b.recall_by_affect(

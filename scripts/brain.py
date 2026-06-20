@@ -605,6 +605,54 @@ class SecondBrain:
                         sources=sources, sb_subject=sb_subject, sb_affect=sb_affect,
                         sb_valid_from=as_of, sb_supersedes=old_id)
 
+    def recall_as_of(self, as_of: str, query: str | None = None,
+                     collection: str | None = None, limit: int = 50) -> list[dict]:
+        """Return Concepts whose validity window contains `as_of` (ISO date/datetime).
+
+        Window predicate: COALESCE(valid_from, created_at) <= as_of
+                          AND (valid_to IS NULL OR valid_to > as_of)
+
+        Timeless Concepts (no validity row) are treated as valid from their
+        created_at onward with no expiry — they appear for any as_of >= creation.
+        Soft-deleted Concepts are never returned. Optional FTS `query` further
+        filters results; `collection` restricts to one collection.
+        """
+        params: list = []
+        if query:
+            sql = [
+                "SELECT c.* FROM concepts c",
+                "JOIN concepts_fts f ON f.rowid = c.rowid",
+                "LEFT JOIN validity v ON v.concept_id = c.id",
+                "WHERE concepts_fts MATCH ?",
+                "AND c.deleted_at IS NULL",
+            ]
+            params.append(query)
+        else:
+            sql = [
+                "SELECT c.* FROM concepts c",
+                "LEFT JOIN validity v ON v.concept_id = c.id",
+                "WHERE c.deleted_at IS NULL",
+            ]
+
+        # A timeless Concept (no validity row → v.valid_from IS NULL) has no
+        # lower-bound restriction and is returned for any as_of.  A Concept with
+        # an explicit valid_from is restricted to as_of >= valid_from.
+        sql.append("AND (v.valid_from IS NULL OR v.valid_from <= ?)")
+        params.append(as_of)
+        sql.append("AND (v.valid_to IS NULL OR v.valid_to > ?)")
+        params.append(as_of)
+
+        if collection is not None:
+            sql.append("AND c.collection = ?")
+            params.append(collection)
+
+        sql.append("ORDER BY " + ("f.rank" if query else "c.updated_at DESC"))
+        sql.append("LIMIT ?")
+        params.append(limit)
+
+        rows = self.con.execute(" ".join(sql), params).fetchall()
+        return [self._row_to_concept(r) for r in rows]
+
     def get(self, concept_id):
         row = self.con.execute(
             "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL", (concept_id,)

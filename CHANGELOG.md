@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Added
+- **Point-in-time recall: `recall_as_of` + `brain recall --as-of`** (R11 / G09
+  **M2 of 2 — R11 closed**, mochu iter-18) — `SecondBrain.recall_as_of(as_of,
+  query=None, collection=None, limit=50)` returns Concepts whose validity window
+  contains the given ISO date: `(valid_from IS NULL OR valid_from <= as_of) AND
+  (valid_to IS NULL OR valid_to > as_of)`. Timeless Concepts (no validity row)
+  appear for any `as_of` with no lower-bound restriction. `brain recall
+  --as-of <date> [query] [--collection C] [--limit N]` is the CLI form.
+  Exclusive upper boundary: a fact with `valid_to=X` is NOT returned at
+  `as_of=X`. 7 new unit tests (130→137); verifier `temporal-asof` (corpus
+  17/17). This closes **R11** (Zep/Graphiti bi-temporal parity: per-fact
+  validity windows + point-in-time query).
+  - Known limitations: `as_of` is compared lexicographically against ISO strings
+    (works correctly for YYYY-MM-DD dates; datetime strings also compare correctly
+    due to ISO 8601 sort order). No `recall_as_of` + graph-proximity reranking
+    yet (G25 is the right gap for that). `brain recall --as-of` output does not
+    yet display the validity window inline (use `brain show <id>` to see it).
 - **Bi-temporal validity storage + supersession** (R11 / G09 **M1 of 2**, mochu
   iter-17) — the temporal fields `sb_valid_from` / `sb_valid_to` /
   `sb_supersedes` (already round-tripped through OKF files) now populate a typed

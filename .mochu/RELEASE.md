@@ -18,7 +18,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 
 ## Psychological memory (mimic-agent foundation)
 - [x] R10 Memories carry a subject; a persona sub-graph query returns exactly that subject's Concepts — verifier: subject-subgraph (G08)
-- [ ] R11 `--as-of <date>` recall returns the historically-valid state; superseded facts are excluded — verifier: temporal-asof (G09)
+- [x] R11 `--as-of <date>` recall returns the historically-valid state; superseded facts are excluded — verifier: temporal-asof (G09) — DONE iter-18 (M2: `recall_as_of()` + `brain recall --as-of` CLI; timeless notes returned for all as_of; exclusive valid_to boundary; NYC→SF supersession point-in-time correctness; 7 new unit tests 130→137; corpus 17/17)
 - [x] R12 Structured affect persists and is queryable per Concept — verifier: affect-persist (G10) — DONE iter-15 (typed `affect` table populated via bundle.rebuild + live add/update; `affect(id)` typed getter; `recall_by_affect()` categorical + numeric-range + combined queries; FK ON DELETE CASCADE; `brain recall-affect` CLI; round-trip stable)
 
 ## Trust

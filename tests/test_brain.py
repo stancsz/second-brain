@@ -898,6 +898,62 @@ class TestBrain(unittest.TestCase):
         self.assertIsNone(self.b.con.execute(
             "SELECT 1 FROM validity WHERE concept_id=?", (dr["id"],)).fetchone())
 
+    # -- recall_as_of (G09 M2 / R11) -----------------------------------------
+
+    def test_recall_as_of_timeless_note_returned(self):
+        """A timeless concept (no validity row) is returned for any as_of date."""
+        dr = self.b.add("Timeless", "always true")
+        hits = self.b.recall_as_of("2000-01-01")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_timeless_future(self):
+        """A timeless concept is returned for a far-future as_of."""
+        dr = self.b.add("Timeless future", "still here")
+        hits = self.b.recall_as_of("2099-12-31")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_window_included(self):
+        """Concept with valid_from <= as_of and no valid_to is returned."""
+        dr = self.b.add("Bounded", "started 2020", sb_valid_from="2020-01-01")
+        hits = self.b.recall_as_of("2022-06-15")
+        self.assertIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_before_valid_from_excluded(self):
+        """Concept not yet valid at as_of is excluded."""
+        dr = self.b.add("Future fact", "not yet true", sb_valid_from="2025-01-01")
+        hits = self.b.recall_as_of("2024-01-01")
+        self.assertNotIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_expired_excluded(self):
+        """Concept whose valid_to is before or equal to as_of is excluded."""
+        dr = self.b.add("Expired", "old fact", sb_valid_from="2010-01-01", sb_valid_to="2015-01-01")
+        hits = self.b.recall_as_of("2020-01-01")
+        self.assertNotIn(dr["id"], [h["id"] for h in hits])
+
+    def test_recall_as_of_exclusive_valid_to_boundary(self):
+        """valid_to is exclusive: as_of == valid_to means EXCLUDED."""
+        dr = self.b.add("Boundary fact", "edge case",
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
+        # Just inside: should be included
+        self.assertIn(dr["id"],
+                      [h["id"] for h in self.b.recall_as_of("2022-12-31")])
+        # On the boundary: should be excluded
+        self.assertNotIn(dr["id"],
+                         [h["id"] for h in self.b.recall_as_of("2023-01-01")])
+
+    def test_recall_as_of_nyc_sf_supersession(self):
+        """NYC→SF supersession: as-of in each window returns the right fact."""
+        nyc = self.b.add("City", "New York City", sb_valid_from="2015-01-01")
+        sf = self.b.supersede(nyc["id"], "City", "San Francisco", as_of="2023-09-01")
+
+        in_nyc = [h["id"] for h in self.b.recall_as_of("2020-01-01")]
+        self.assertIn(nyc["id"], in_nyc)
+        self.assertNotIn(sf["id"], in_nyc)
+
+        in_sf = [h["id"] for h in self.b.recall_as_of("2024-01-01")]
+        self.assertIn(sf["id"], in_sf)
+        self.assertNotIn(nyc["id"], in_sf)
+
 
 if __name__ == "__main__":
     unittest.main()
