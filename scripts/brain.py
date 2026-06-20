@@ -800,10 +800,24 @@ class SecondBrain:
         ).rowcount
         if n:
             d = self.con.execute(
-                "SELECT title, content FROM concepts WHERE id=?", (concept_id,)
+                "SELECT title, content, metadata FROM concepts WHERE id=?", (concept_id,)
             ).fetchone()
             self._sync_wikilinks(concept_id, d["content"])
             self._resolve_pending_to(concept_id, d["title"])
+            # Re-derive the psychological indexes from metadata. A concept that
+            # was soft-deleted and then carried through a bundle.rebuild lost its
+            # affect/subject/validity rows (rebuild skips deleted concepts), and
+            # the metadata is the surviving source of truth. Without this, the
+            # psych dims would stay empty until the next full rebuild.
+            try:
+                meta = json.loads(d["metadata"] or "{}")
+            except (ValueError, TypeError):
+                meta = {}
+            self._sync_subject_index_for(concept_id)              # reads metadata itself
+            self._sync_affect_for(concept_id, meta.get("sb_affect"))
+            self._sync_validity_for(concept_id, meta.get("sb_valid_from"),
+                                    meta.get("sb_valid_to"), meta.get("sb_supersedes"),
+                                    strict=False)
             self.con.commit()
         return n > 0
 

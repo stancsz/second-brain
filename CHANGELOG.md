@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Fixed
+- **`restore()` recovers psychological dimensions** (G27 / reliability, hardens
+  R10/R11/R12, mochu iter-20) — a Concept that was soft-deleted, carried through a
+  `bundle.rebuild` (which skips indexing deleted Concepts), and then restored had
+  empty affect/subject/validity derived rows until the *next* full rebuild, because
+  `restore()` re-synced only wikilinks + pending links. It now re-derives all three
+  psychological indexes from the Concept's surviving `metadata`: affect (R12),
+  subject sub-graph membership (R10), and the validity window (R11) — exactly, with
+  no second rebuild required. Restoring a plain note adds no spurious rows; the live
+  delete→restore path (no rebuild) is unchanged and idempotent. 2 new unit tests
+  (143→145); verifier `restore-psych-dims` (corpus 19/19).
 - **ISO date validation on validity windows** (G26 / reliability, hardens R11,
   mochu iter-19) — `sb_valid_from` / `sb_valid_to` were stored as opaque strings,
   so a malformed date (`"June 2023"`, `"2023/13/01"`) was silently accepted and

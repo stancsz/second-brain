@@ -994,6 +994,44 @@ class TestBrain(unittest.TestCase):
         self.assertIsNotNone(self.b.validity(good["id"]))
         self.assertIsNone(self.b.validity(bad["id"]))
 
+    # -- restore recovers psych dims (G27) -----------------------------------
+
+    def test_restore_recovers_psych_dims_after_rebuild(self):
+        """A soft-deleted concept carried through bundle.rebuild loses its psych
+        rows; restore() must recover affect/subject/validity from metadata."""
+        import bundle
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            b1 = SecondBrain(tmp / "b1.db")
+            dr = b1.add("Mem", "body", sb_subject="/people/alex.md",
+                        sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9},
+                        sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
+            cid = dr["id"]
+            b1.delete(cid)
+            bundle.export(b1, str(tmp / "okf"))
+            b1.close()
+            b2 = bundle.rebuild(str(tmp / "okf"), str(tmp / "b2.db"))
+            try:
+                # bug precondition: psych rows dropped by rebuild
+                self.assertIsNone(b2.affect(cid))
+                self.assertIsNone(b2.validity(cid))
+                # the fix
+                b2.restore(cid)
+                self.assertEqual(b2.affect(cid)["emotion"], "grief")
+                self.assertEqual(b2.affect(cid)["intensity"], 0.9)
+                self.assertEqual(b2.validity(cid)["valid_from"], "2020-01-01")
+                self.assertTrue(any(c["id"] == cid
+                                    for c in b2.subject_subgraph("/people/alex.md")))
+            finally:
+                b2.close()
+
+    def test_restore_plain_note_no_spurious_psych_rows(self):
+        plain = self.b.add("Plain", "no psych dims")
+        self.b.delete(plain["id"])
+        self.assertTrue(self.b.restore(plain["id"]))
+        self.assertIsNone(self.b.affect(plain["id"]))
+        self.assertIsNone(self.b.validity(plain["id"]))
+
 
 if __name__ == "__main__":
     unittest.main()
