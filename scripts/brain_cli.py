@@ -521,6 +521,16 @@ def main():
             )
             out(res, human)
 
+    except ValueError as ex:
+        # Actionable validation errors (e.g. a malformed --valid-from / --valid-to
+        # ISO date) surface as a clean one-line message, never a stack trace.
+        # (Generalizing this boundary to every bad-input path is gap G28.)
+        msg = str(ex)
+        if args.json:
+            print(json.dumps({"error": msg}, ensure_ascii=False, indent=2))
+        else:
+            print(f"❌ {msg}", file=sys.stderr)
+        sys.exit(1)
     finally:
         b.close()
 

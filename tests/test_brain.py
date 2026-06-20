@@ -5,6 +5,7 @@ Run with:  python -m unittest tests/test_brain.py
 or:        python tests/test_brain.py
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -953,6 +954,45 @@ class TestBrain(unittest.TestCase):
         in_sf = [h["id"] for h in self.b.recall_as_of("2024-01-01")]
         self.assertIn(sf["id"], in_sf)
         self.assertNotIn(nyc["id"], in_sf)
+
+    # -- ISO date validation (G26) -------------------------------------------
+
+    def test_add_rejects_malformed_valid_from(self):
+        for bad in ("June 2023", "2023/06/01", "2023-13-01", "2023-02-30", "tomorrow"):
+            with self.assertRaises(ValueError, msg=f"{bad!r} should raise"):
+                self.b.add("X", "y", sb_valid_from=bad)
+
+    def test_add_rejects_malformed_valid_to(self):
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_to="not-a-date")
+
+    def test_add_accepts_iso_date_datetime_and_leap(self):
+        for good in ("2023-01-01", "2024-02-29", "2023-06-15T12:30:00"):
+            dr = self.b.add(f"Good {good}", "y", sb_valid_from=good)
+            self.assertEqual(self.b.validity(dr["id"])["valid_from"], good)
+
+    def test_update_rejects_malformed_date(self):
+        dr = self.b.add("Mutable", "body")
+        with self.assertRaises(ValueError):
+            self.b.update(dr["id"], sb_valid_from="June 2023")
+
+    def test_supersede_rejects_malformed_as_of(self):
+        old = self.b.add("Old", "v1", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.supersede(old["id"], "New", "v2", as_of="not-a-date")
+
+    def test_rebuild_quarantines_bad_date_keeps_good(self):
+        """A malformed date already in metadata is quarantined on rebuild; the
+        rest of the index builds intact and the rebuild does not crash."""
+        good = self.b.add("Good", "g", sb_valid_from="2021-01-01")
+        bad = self.b.add("Bad", "b")
+        self.b.con.execute(
+            "UPDATE concepts SET metadata=? WHERE id=?",
+            (json.dumps({"sb_valid_from": "garbage"}), bad["id"]))
+        self.b.con.commit()
+        n = self.b.rebuild_validity_index()  # must not raise
+        self.assertIsNotNone(self.b.validity(good["id"]))
+        self.assertIsNone(self.b.validity(bad["id"]))
 
 
 if __name__ == "__main__":

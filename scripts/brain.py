@@ -234,6 +234,9 @@ class SecondBrain:
     def add(self, title, content, collection=None, tags=None, sources=None,
             sb_subject=None, sb_affect=None, sb_valid_from=None, sb_valid_to=None,
             sb_supersedes=None):
+        # Validate temporal fields BEFORE any write — fail fast, leave no
+        # half-written row behind on a malformed date.
+        self._normalize_validity(sb_valid_from, sb_valid_to, sb_supersedes, strict=True)
         did = _uuid()
         meta = {}
         if sb_subject:
@@ -528,20 +531,62 @@ class SecondBrain:
 
     # -- bi-temporal validity (G09 / R11) -------------------------------------
 
-    def _normalize_validity(self, valid_from, valid_to, supersedes) -> tuple | None:
+    @staticmethod
+    def _is_iso_date(value: str) -> bool:
+        """True iff `value` is a well-formed ISO 8601 date or datetime — the only
+        forms that compare correctly under the lexicographic ordering recall_as_of
+        relies on. Accepts `2023-01-01` and `2023-06-15T12:30:00`; rejects
+        `June 2023`, `2023/06/01`, `2023-13-01`, etc."""
+        from datetime import datetime as _dt
+        try:
+            _date.fromisoformat(value)
+            return True
+        except ValueError:
+            pass
+        try:
+            _dt.fromisoformat(value)
+            return True
+        except ValueError:
+            return False
+
+    def _normalize_validity(self, valid_from, valid_to, supersedes,
+                            strict: bool = True) -> tuple | None:
         """Coerce validity inputs to a (valid_from, valid_to, supersedes) tuple of
         trimmed strings (or None per field), or None when there is nothing to
-        record. ISO strings are stored verbatim; non-strings are dropped."""
+        record.
+
+        `valid_from` / `valid_to` must be well-formed ISO 8601 dates/datetimes
+        (lexicographic comparison in recall_as_of assumes this). With
+        `strict=True` (the write path: add/update/supersede), a malformed date
+        raises ValueError with an actionable message — fail fast, never store a
+        string that sorts wrong. With `strict=False` (the rebuild path, which
+        reads possibly hand-authored OKF metadata), a malformed date is
+        QUARANTINED: that field is dropped so the rest of the index still builds.
+        `supersedes` is an id, not a date, and is not format-checked."""
         def _s(v):
             return v.strip() if isinstance(v, str) and v.strip() else None
         vf, vt, sup = _s(valid_from), _s(valid_to), _s(supersedes)
+        for field, val in (("sb_valid_from", vf), ("sb_valid_to", vt)):
+            if val is not None and not self._is_iso_date(val):
+                if strict:
+                    raise ValueError(
+                        f"{field}={val!r} is not a valid ISO 8601 date — use "
+                        f"YYYY-MM-DD (e.g. 2023-06-01) or an ISO datetime")
+                # rebuild path: quarantine the malformed field, keep the rest
+                if field == "sb_valid_from":
+                    vf = None
+                else:
+                    vt = None
         if vf is None and vt is None and sup is None:
             return None
         return (vf, vt, sup)
 
-    def _sync_validity_for(self, concept_id: str, valid_from, valid_to, supersedes) -> None:
-        """Upsert (or, when empty, delete) one Concept's validity row."""
-        row = self._normalize_validity(valid_from, valid_to, supersedes)
+    def _sync_validity_for(self, concept_id: str, valid_from, valid_to, supersedes,
+                           strict: bool = True) -> None:
+        """Upsert (or, when empty, delete) one Concept's validity row. `strict`
+        is forwarded to _normalize_validity: True (write path) raises on a bad
+        date; False (rebuild path) quarantines it."""
+        row = self._normalize_validity(valid_from, valid_to, supersedes, strict=strict)
         if row is None:
             self.con.execute("DELETE FROM validity WHERE concept_id=?", (concept_id,))
             return
@@ -571,8 +616,10 @@ class SecondBrain:
                 meta = {}
             vf, vt, sup = (meta.get("sb_valid_from"), meta.get("sb_valid_to"),
                           meta.get("sb_supersedes"))
-            if self._normalize_validity(vf, vt, sup) is not None:
-                self._sync_validity_for(r["id"], vf, vt, sup)
+            # Rebuild reads possibly hand-authored OKF metadata — quarantine a
+            # malformed date (strict=False) instead of crashing the whole rebuild.
+            if self._normalize_validity(vf, vt, sup, strict=False) is not None:
+                self._sync_validity_for(r["id"], vf, vt, sup, strict=False)
                 n += 1
         self.con.commit()
         return n
@@ -688,6 +735,10 @@ class SecondBrain:
         new_vf = cur_meta.get("sb_valid_from") if sb_valid_from is _UNSET else sb_valid_from
         new_vt = cur_meta.get("sb_valid_to") if sb_valid_to is _UNSET else sb_valid_to
         new_sup = cur_meta.get("sb_supersedes") if sb_supersedes is _UNSET else sb_supersedes
+        # Validate any explicitly-supplied temporal field BEFORE any write — fail
+        # fast on a malformed date, leaving the concept untouched.
+        if sb_valid_from is not _UNSET or sb_valid_to is not _UNSET or sb_supersedes is not _UNSET:
+            self._normalize_validity(new_vf, new_vt, new_sup, strict=True)
         new_meta = dict(cur_meta)
         if new_sb_subject:
             new_meta["sb_subject"] = new_sb_subject

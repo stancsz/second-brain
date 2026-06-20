@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Fixed
+- **ISO date validation on validity windows** (G26 / reliability, hardens R11,
+  mochu iter-19) — `sb_valid_from` / `sb_valid_to` were stored as opaque strings,
+  so a malformed date (`"June 2023"`, `"2023/13/01"`) was silently accepted and
+  then sorted wrong under the lexicographic comparison `recall_as_of` relies on.
+  Now two contracts hold: the **write path** (`add` / `update` / `supersede`)
+  validates against ISO 8601 and raises `ValueError` with an actionable message
+  before any row is written (well-formed dates, ISO datetimes, and leap dates
+  like `2024-02-29` are accepted); the **rebuild path** (`rebuild_validity_index`,
+  reached by `bundle.rebuild`) **quarantines** a malformed date already present in
+  hand-authored OKF metadata — that concept's window is dropped, the concept
+  itself and every other concept's window survive, and the rebuild never crashes.
+  `brain add --valid-from "June 2023"` now exits 1 with a clean one-line message
+  instead of a stack trace (a narrow instance of the CLI error-boundary work
+  tracked broadly as G28). 6 new unit tests (137→143); verifier `iso-validation`
+  (corpus 18/18).
+
 ### Added
 - **Point-in-time recall: `recall_as_of` + `brain recall --as-of`** (R11 / G09
   **M2 of 2 — R11 closed**, mochu iter-18) — `SecondBrain.recall_as_of(as_of,
