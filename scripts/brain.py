@@ -532,22 +532,28 @@ class SecondBrain:
     # -- bi-temporal validity (G09 / R11) -------------------------------------
 
     @staticmethod
-    def _is_iso_date(value: str) -> bool:
+    def _parse_iso(value: str):
+        """Parse an ISO 8601 date or datetime to a comparable `datetime`, or None
+        if it is not well-formed. A bare date becomes midnight so date and
+        datetime forms compare correctly across each other."""
+        from datetime import datetime as _dt
+        try:
+            d = _date.fromisoformat(value)
+            return _dt(d.year, d.month, d.day)
+        except ValueError:
+            pass
+        try:
+            return _dt.fromisoformat(value)
+        except ValueError:
+            return None
+
+    @classmethod
+    def _is_iso_date(cls, value: str) -> bool:
         """True iff `value` is a well-formed ISO 8601 date or datetime — the only
         forms that compare correctly under the lexicographic ordering recall_as_of
         relies on. Accepts `2023-01-01` and `2023-06-15T12:30:00`; rejects
         `June 2023`, `2023/06/01`, `2023-13-01`, etc."""
-        from datetime import datetime as _dt
-        try:
-            _date.fromisoformat(value)
-            return True
-        except ValueError:
-            pass
-        try:
-            _dt.fromisoformat(value)
-            return True
-        except ValueError:
-            return False
+        return cls._parse_iso(value) is not None
 
     def _normalize_validity(self, valid_from, valid_to, supersedes,
                             strict: bool = True) -> tuple | None:
@@ -577,6 +583,20 @@ class SecondBrain:
                     vf = None
                 else:
                     vt = None
+        # Window coherence: valid_from must not be AFTER valid_to. A backwards
+        # window can never contain any as_of (recall_as_of requires
+        # valid_from <= as_of < valid_to), so it is a mistake, not a state.
+        # Equal bounds are allowed (degenerate but representable). Compare
+        # temporally so mixed date/datetime forms order correctly.
+        if vf is not None and vt is not None:
+            pf, pt = self._parse_iso(vf), self._parse_iso(vt)
+            if pf is not None and pt is not None and pf > pt:
+                if strict:
+                    raise ValueError(
+                        f"valid window is backwards: sb_valid_from={vf!r} is after "
+                        f"sb_valid_to={vt!r} — valid_from must be on or before valid_to")
+                # rebuild path: drop the whole window (cannot tell which bound is wrong)
+                vf = vt = None
         if vf is None and vt is None and sup is None:
             return None
         return (vf, vt, sup)

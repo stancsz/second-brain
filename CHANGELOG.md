@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Fixed
+- **Validity window coherence** (G32 / reliability, hardens R11, mochu iter-21) —
+  a backwards window (`valid_from` after `valid_to`) was storable; it can never
+  contain any `as_of` under `recall_as_of`'s predicate, so it is a mistake, not a
+  representable state. Mirroring the G26 two-contract shape: the **write path**
+  (`add` / `update` / `supersede`, including a `supersede` `as_of` that precedes
+  the old fact's `valid_from`) now raises `ValueError`; the **rebuild path**
+  **quarantines** a backwards window already in metadata (drops the whole window,
+  keeps the concept and every other row, never crashes). Bounds are compared
+  temporally, so mixed date/datetime forms order correctly; equal-bound and
+  single-bound (partial) windows are accepted. `brain add --valid-from X
+  --valid-to Y` with `X > Y` is a clean one-line message, no traceback. 6 new unit
+  tests (145→151); verifier `window-coherence` (corpus 20/20).
 - **`restore()` recovers psychological dimensions** (G27 / reliability, hardens
   R10/R11/R12, mochu iter-20) — a Concept that was soft-deleted, carried through a
   `bundle.rebuild` (which skips indexing deleted Concepts), and then restored had

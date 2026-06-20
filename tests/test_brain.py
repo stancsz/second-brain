@@ -1032,6 +1032,46 @@ class TestBrain(unittest.TestCase):
         self.assertIsNone(self.b.affect(plain["id"]))
         self.assertIsNone(self.b.validity(plain["id"]))
 
+    # -- window coherence (G32) ----------------------------------------------
+
+    def test_add_rejects_backwards_window(self):
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_from="2025-01-01", sb_valid_to="2020-01-01")
+
+    def test_add_rejects_backwards_window_mixed_forms(self):
+        # datetime after a bare date on the same day is still backwards
+        with self.assertRaises(ValueError):
+            self.b.add("X", "y", sb_valid_from="2023-06-01T12:00:00",
+                       sb_valid_to="2023-06-01")
+
+    def test_update_rejects_valid_to_before_existing_valid_from(self):
+        dr = self.b.add("F", "y", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.update(dr["id"], sb_valid_to="2019-01-01")
+
+    def test_supersede_rejects_as_of_before_old_valid_from(self):
+        old = self.b.add("Old", "v1", sb_valid_from="2020-01-01")
+        with self.assertRaises(ValueError):
+            self.b.supersede(old["id"], "New", "v2", as_of="2015-01-01")
+
+    def test_equal_bounds_and_partial_windows_accepted(self):
+        eq = self.b.add("Eq", "y", sb_valid_from="2022-05-05", sb_valid_to="2022-05-05")
+        self.assertIsNotNone(self.b.validity(eq["id"]))
+        fo = self.b.add("FromOnly", "y", sb_valid_from="2020-01-01")
+        self.assertEqual(self.b.validity(fo["id"])["valid_from"], "2020-01-01")
+
+    def test_rebuild_quarantines_backwards_window(self):
+        good = self.b.add("Good", "g", sb_valid_from="2021-01-01", sb_valid_to="2022-01-01")
+        bad = self.b.add("Bad", "b")
+        self.b.con.execute(
+            "UPDATE concepts SET metadata=? WHERE id=?",
+            (json.dumps({"sb_valid_from": "2025-01-01", "sb_valid_to": "2020-01-01"}),
+             bad["id"]))
+        self.b.con.commit()
+        self.b.rebuild_validity_index()  # must not raise
+        self.assertIsNotNone(self.b.validity(good["id"]))
+        self.assertIsNone(self.b.validity(bad["id"]))
+
 
 if __name__ == "__main__":
     unittest.main()
