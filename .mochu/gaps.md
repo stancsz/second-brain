@@ -10,7 +10,6 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G08 | features | Psychological schema: `sb_subject`/subjects table; memory `type` vocabulary | M1 SHIPPED iter-14 (subjects + concept_subject + subject_subgraph + subjects() + CLI + 6 tests + verifier); R10 satisfied, M2/M3 are non-release enhancements (grouping, FK cascade, humanization) | 3 | 4 | 4 | 3.0 |
 | G11 | features | `Backend` interface + S3/GCS adapters (one-way mirror) | "any cloud db / s3 / gcs" requested; none exist | 4 | 4 | 4 | 4.0 |
 | G12 | features | Google Drive / OneDrive backup adapters (MCP-first) | Requested; MCP connectors available in session | 4 | 4 | 3 | 3.0 |
-| G13 | trust | Selective-by-tag encryption (age) for private/psych Concepts before push | Psych data would hit remotes in plaintext otherwise | 5 | 4 | 3 | 3.75 |
 | G15 | reliability | Hook + OS-scheduler install (`install.sh`) for scheduled sync | install.sh has no scheduler entry | 3 | 3 | 3 | 3.0 |
 | G16 | performance | Incremental (mtime-based) rebuild for large Bundles | Full walk only; risk at scale | 2 | 3 | 3 | 2.0 |
 | G17 | features | Migrate existing v2.1 brain.db → OKF Bundle (first real round-trip test) | Existing DBs must not be orphaned; G09 migration story must be back-compat | 4 | 3 | 4 | 5.33 |
@@ -45,6 +44,7 @@ plus competitive deltas. WIP preempts; cooldown excluded; verifiable gaps only.
 | G26 | reliability | iter-19 | Hardens R11: ISO 8601 validation on `sb_valid_from`/`sb_valid_to`. Write path (add/update/supersede) raises ValueError before any write; rebuild path quarantines a malformed date (concept survives, other windows intact, no crash). Clean CLI ValueError boundary. Verifier iso-validation (18/18 corpus); 6 tests (137→143). Follow-up: G32 (window coherence). Cooldown until iter-25. |
 | G27 | reliability | iter-20 | Hardens R10/R11/R12: `restore()` re-derives affect + subject + validity from `concepts.metadata` after un-deleting, fixing psych dims being empty until the next rebuild on a delete→rebuild→restore cycle. Verifier restore-psych-dims (19/19 corpus); 2 tests (143→145). Cooldown until iter-26. |
 | G32 | reliability | iter-21 | Hardens R11: backwards validity window (`valid_from` after `valid_to`) rejected on write (add/update/supersede), quarantined on rebuild; temporal compare for mixed date/datetime forms; equal-bound + partial windows accepted. Verifier window-coherence (20/20 corpus); 6 tests (145→151). |
+| G13 | trust | iter-22 | R13 satisfied: opt-in Fernet (lazy `cryptography`) selective encryption — private/psych/Episode/RelationshipModel Concepts encrypted into an OKF envelope on export (excluded from index/log), decrypted on rebuild; idempotent (no churn), strict-refuse + default-warn; all sb_* round-trip. `scripts/crypto.py`; verifier selective-encryption (21/21 corpus); 5 tests (151→156). Cooldown until iter-28. |
 
 ## Parked
 _(none yet)_

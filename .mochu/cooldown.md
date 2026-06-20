@@ -14,3 +14,4 @@ G09 temporal-validity + recall_as_of (R11) — until iter-24
 G26 iso-validation — until iter-25
 G27 restore-psych-dims — until iter-26
 G32 window-coherence — until iter-27
+G13 selective-encryption (R13) — until iter-28
