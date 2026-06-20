@@ -169,6 +169,7 @@ with tempfile.TemporaryDirectory() as tmp:
 # ── Phase 7: EXEC subprocess ─────────────────────────────────────────────────
 print("Phase 7: subprocess encrypt->write->read-raw asserts ciphertext")
 with tempfile.TemporaryDirectory() as tmp:
+    tmp = pathlib.Path(tmp)
     kp = with_key(tmp)
     script = (
         "import sys; sys.path.insert(0, r'%s')\n" % str(ROOT / 'scripts') +
