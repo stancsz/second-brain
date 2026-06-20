@@ -27,3 +27,7 @@ their named verifiers. Each line names the gap(s)/verifier(s) that satisfy it.
 
 ## Docs
 - [x] R15 SKILL.md + README describe the OKF model and every shipped capability; a stranger can install and sync — verifier: docs-executable (G14) — DONE iter-9
+
+## Retrieval & ecosystem (ratified 2026-06-20 from iter-18 competitive intel)
+- [ ] R16 `search --semantic` recalls a synonym match FTS5 would miss when `sqlite-vec` is present, AND falls back to FTS5 with no crash when the extension is absent (the moat-protecting fallback leg is a first-class acceptance phase) — verifier: semantic-search (G29)
+- [ ] R17 Every core brain operation (search/add/recall-as-of/recall-affect/recall-subject/show/related) is reachable over MCP; a third-party client can drive the brain with zero bespoke glue — verifier: mcp-server (G30)
