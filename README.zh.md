@@ -8,6 +8,25 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-green.svg)](#安装)
 [![Schema: v2.1](https://img.shields.io/badge/schema-v2.1-blueviolet.svg)](./scripts/schema.sql)
+[![MCP: ready](https://img.shields.io/badge/MCP-ready-blueviolet.svg)](#作为-mcp-服务器运行)
+
+---
+
+## 30 秒上手
+
+```bash
+git clone https://github.com/stancsz/second-brain.git
+cd second-brain
+python3 scripts/brain_cli.py add "第一条笔记" "成功了。"   # 首次运行会创建 ~/.secondbrain/brain.db
+python3 scripts/brain_cli.py search "成功"
+```
+
+不用 `pip install`,不用 Docker,不用云账号,不用 API key —— 只要 **Python 3.8+**(仅标准库)。
+
+**两种方式给你的 agent 装上记忆 —— 同一个脑子,同一份文件:**
+
+- 🧩 **作为原生 Claude Code skill** —— clone 进 `~/.claude/skills/` 再跑 `install.sh`,你的 agent 就有了"记一下" /"我对 X 了解多少"的能力,带自动捕获与主动召回。→ [在 Claude Code 中使用](#在-claude-code-中使用)
+- 🔌 **作为独立 MCP 服务器** —— 跑 `python3 scripts/brain_mcp.py`,它就以 [Model Context Protocol](https://modelcontextprotocol.io) 在 stdio 上对话,**Claude Desktop、Cursor、Continue,或任何 MCP 客户端**都能读写这个脑子。依然零依赖。→ [作为 MCP 服务器运行](#作为-mcp-服务器运行)
 
 ---
 
@@ -210,6 +229,44 @@ ln -s <repo>/commands/history.md ~/.claude/commands/history.md
 ```
 
 之后输入 `/history`,agent 就会列出最近的会话日志,挑一条可读地展示出来。你也可以直接说"给我看看最近的 3 次对话"。从那里还能按需把某条日志**提炼**进脑子。
+
+## 作为 MCP 服务器运行
+
+除了 Claude Code skill,`second-brain` 还自带一个**独立的 [MCP](https://modelcontextprotocol.io) 服务器** —— `scripts/brain_mcp.py`,让任何会说 MCP 的客户端(Claude Desktop、Cursor、Continue、Cline,或你自己的 host)都能读写同一个脑子。和项目其它部分一样,它**只依赖标准库**:服务器直接实现了 MCP 的 stdio 传输(以换行分隔的 JSON-RPC 2.0),不用 SDK,不用 `pip install`。
+
+直接运行确认能启动:
+
+```bash
+python3 scripts/brain_mcp.py    # 在 stdio 上对话;Ctrl-D / Ctrl-C 退出
+```
+
+注册到 MCP 客户端 —— 例如 Claude Desktop 的 `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "second-brain": {
+      "command": "python3",
+      "args": ["/绝对路径/second-brain/scripts/brain_mcp.py"]
+    }
+  }
+}
+```
+
+服务器暴露以下工具,全部读写 CLI 和 skill 共用的同一个 `~/.secondbrain/brain.db`:
+
+| 工具 | 作用 |
+|---|---|
+| `brain_add` | 保存一条 Concept(支持标签、集合、`[[wikilinks]]`) |
+| `brain_search` | 全文检索 |
+| `brain_show` | 完整展示一条 Concept 及其关系 |
+| `brain_list` | 列出 Concept,可按集合/标签过滤 |
+| `brain_related` | 某条 Concept 的关联项 |
+| `brain_recall_subject` | 某个主体(人/话题)的人格子图 |
+| `brain_recall_as_of` | 时间点召回 —— 在某个 ISO 日期为真的事实 |
+| `brain_stats` | 脑子健康度:数量、热门标签、集合 |
+
+同一份文件,三个入口:给人用的 `brain` CLI、给自动捕获用的 Claude Code skill,以及给其它一切 agent host 用的这个 MCP 服务器。
 
 ## 与同类工具的对比
 
