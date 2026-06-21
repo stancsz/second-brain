@@ -8,6 +8,25 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![Dependencies: 0](https://img.shields.io/badge/dependencies-0-green.svg)](#installation)
 [![OKF: v0.1](https://img.shields.io/badge/OKF-v0.1-brightgreen.svg)](./docs/02-okf-and-terminology.md)
+[![MCP: ready](https://img.shields.io/badge/MCP-ready-blueviolet.svg)](#run-as-an-mcp-server)
+
+---
+
+## Get started in 30 seconds
+
+```bash
+git clone https://github.com/stancsz/second-brain.git
+cd second-brain
+python3 scripts/brain_cli.py add "First note" "It works."   # creates ~/.secondbrain/brain.db
+python3 scripts/brain_cli.py search "works"
+```
+
+No `pip install`, no Docker, no cloud account, no API key — just **Python 3.8+** (standard library only).
+
+**Two ways to give your agent memory — same brain, same files:**
+
+- 🧩 **As a native Claude Code skill** — clone into `~/.claude/skills/` and run `install.sh`. Your agent gains "remember this" / "what do I know about X" with auto-capture and proactive recall. → [Use with Claude Code](#use-with-claude-code)
+- 🔌 **As a standalone MCP server** — run `python3 scripts/brain_mcp.py` and it speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so **Claude Desktop, Cursor, Continue, or any MCP client** can read and write the brain. Still zero dependencies. → [Run as an MCP server](#run-as-an-mcp-server)
 
 ---
 
@@ -89,7 +108,8 @@ Most "AI memory" products store your data in a third-party cloud, behind an API,
 - **Logs stay logs; the brain stays clean.** A `Stop` hook archives the full raw transcript of every session to plain files under `~/.secondbrain/logs/` — never into the brain. The brain (`brain.db`) holds only *distilled* know-how: titled Concepts the agent extracts at session end (decisions, preferences, facts, reusable knowledge), plus anything you explicitly save. Searching your knowledge never returns a wall of raw chat.
 - **Proactive recall.** A `UserPromptSubmit` hook searches the clean brain against each prompt and injects relevant Concepts into the agent's context *before* it answers — so you don't have to ask "what do I know about X".
 - **`/history` slash command.** Browse past conversations in your brain, then dive into the chosen one.
-- **Phase 2 (planned).** Optional vector search via `sqlite-vec`, MCP server interface, and selective encryption for private/psychological Concepts.
+- **Standalone MCP server.** `scripts/brain_mcp.py` exposes the brain over the Model Context Protocol (stdio, stdlib-only) so Claude Desktop, Cursor, Continue, and any MCP client can use it — same files as the CLI and skill. See [Run as an MCP server](#run-as-an-mcp-server).
+- **Phase 2 (planned).** Optional vector search via `sqlite-vec` and selective encryption for private/psychological Concepts.
 
 ## Installation
 
@@ -306,6 +326,44 @@ Then type `/history` — the agent lists your recent session logs and opens the 
 you pick, rendered readably. You can also say "show me my last 3 conversations".
 From there it can **distill** a log into the brain on request.
 
+## Run as an MCP server
+
+Beyond the Claude Code skill, `second-brain` ships a **standalone [MCP](https://modelcontextprotocol.io) server** — `scripts/brain_mcp.py` — so any MCP-speaking client (Claude Desktop, Cursor, Continue, Cline, or your own host) can read and write the same brain. Like the rest of the project, it is **stdlib-only**: the server implements MCP's stdio transport (newline-delimited JSON-RPC 2.0) directly, with no SDK and no `pip install`.
+
+Run it directly to confirm it starts:
+
+```bash
+python3 scripts/brain_mcp.py    # speaks MCP on stdio; Ctrl-D / Ctrl-C to exit
+```
+
+Register it with an MCP client — e.g. Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "second-brain": {
+      "command": "python3",
+      "args": ["/absolute/path/to/second-brain/scripts/brain_mcp.py"]
+    }
+  }
+}
+```
+
+The server exposes these tools, all backed by the same `~/.secondbrain/brain.db` the CLI and skill use:
+
+| Tool | What it does |
+|---|---|
+| `brain_add` | Save a Concept (with tags, collection, `[[wikilinks]]`) |
+| `brain_search` | Full-text search the brain |
+| `brain_show` | Show one Concept in full, with its relations |
+| `brain_list` | List Concepts, filterable by collection/tag |
+| `brain_related` | Related Concepts for a given id |
+| `brain_recall_subject` | The persona sub-graph for one subject (person/topic) |
+| `brain_recall_as_of` | Point-in-time recall — facts valid on a given ISO date |
+| `brain_stats` | Brain health: counts, top tags, collections |
+
+Same files, three front doors: the `brain` CLI for humans, the Claude Code skill for auto-capture, and this MCP server for every other agent host.
+
 ## Comparison
 
 | Tool | Data location | Agent-readable | Lock-in | Backup | Cross-session memory | Install |
@@ -367,7 +425,8 @@ For continuous backup, pair with [litestream](https://litestream.io/) to replica
 ## Roadmap
 
 - **v2.1 (current).** FTS5, soft delete, write-time-frozen wikilinks, `pending_links` table, recursive traverse.
-- **Phase 2.** MCP server, vector search via `sqlite-vec`, automatic `inferred`-source links above a similarity threshold.
+- **Shipped.** Standalone MCP server (`scripts/brain_mcp.py`) — stdlib-only, stdio transport.
+- **Phase 2.** Vector search via `sqlite-vec`, automatic `inferred`-source links above a similarity threshold.
 - **North star — the shadow-distilled human.** The psychological-memory layer (subjects, affect, bi-temporal validity, supersession) and the auto-distill loop are the foundation for an agent that can faithfully shadow a *specific* real person over time. The work ahead: richer persona synthesis from the sub-graph, drift/consistency checks across superseded facts, and a recall surface that reconstructs "who this person was as of date X" for grounding a mimic agent.
 - **Ideas.** Markdown round-trip sync, Obsidian-compatible export refinements, encrypted local replicas.
 
