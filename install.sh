@@ -61,10 +61,26 @@ echo "🔧 Merging hooks into $SETTINGS_FILE…"
 CAPTURE_CMD="python3 $CAPTURE_HOOK_PATH"
 RECALL_CMD="python3 $RECALL_HOOK_PATH"
 
-python3 - <<PYEOF
-import json, os
+# The embedded Python below may be a native-Windows interpreter, which does NOT
+# understand an MSYS/Cygwin "/c/Users/..." path — it would silently write to
+# C:\c\Users\... instead of the real settings file. Convert to a Windows-native
+# path for file I/O when cygpath is available (no-op on Linux/macOS).
+PY_SETTINGS_FILE="$SETTINGS_FILE"
+if command -v cygpath >/dev/null 2>&1; then
+    PY_SETTINGS_FILE="$(cygpath -w "$SETTINGS_FILE")"
+fi
 
-settings_file = """$SETTINGS_FILE"""
+python3 - <<PYEOF
+import json, os, sys
+
+# Windows consoles default to cp1252; the status emojis below crash a cp1252
+# stdout. Reconfigure to UTF-8 (Windows-first encoding discipline invariant).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, OSError):
+    pass
+
+settings_file = r"""$PY_SETTINGS_FILE"""
 capture_cmd = """$CAPTURE_CMD"""
 recall_cmd = """$RECALL_CMD"""
 
@@ -79,7 +95,7 @@ wanted = [
 settings = {}
 if os.path.exists(settings_file):
     try:
-        with open(settings_file, "r") as f:
+        with open(settings_file, "r", encoding="utf-8") as f:
             settings = json.load(f)
     except (json.JSONDecodeError, ValueError):
         print("⚠️  Existing settings.json is invalid JSON — starting fresh.")
@@ -105,7 +121,7 @@ for event, cmd in wanted:
         )
         print(f"✅ {event} hook added.")
 
-with open(settings_file, "w") as f:
+with open(settings_file, "w", encoding="utf-8") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
 PYEOF
