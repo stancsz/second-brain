@@ -32,3 +32,5 @@ dist/
 hooks/*.log
 .opencode/
 .claude/
+growth/
+.mochu/
