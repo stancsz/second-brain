@@ -328,22 +328,32 @@ def _database_state(brain) -> dict[str, object]:
 
 def _managed_bundle_files(bundle_path: Path) -> list[Path]:
     files = []
-    for path in bundle_path.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(bundle_path)
-        posix = relative.as_posix()
-        if (
-            ".git" in relative.parts
-            or posix.endswith(".conflict.md")
-            or path.name in {DIRTY_MARKER, SYNC_MARKER, PAIR_STATE, ".gitignore"}
-            or path.name.startswith(DIRTY_MARKER + ".tmp-")
-            or path.name.startswith(SYNC_MARKER + ".tmp-")
-            or path.name.startswith(PAIR_STATE + ".tmp-")
-            or path.name.startswith(".") and ".tmp-" in path.name
-        ):
-            continue
-        files.append(path)
+    # Prune operational directories before walking them.  In particular, a
+    # concurrent Git commit/rebase can create and remove loose objects while
+    # the receipt is being computed; descending into ``.git`` makes an
+    # otherwise valid sync fail with FileNotFoundError.  These directories are
+    # never canonical Bundle content and are excluded from the digest anyway.
+    for root, directories, filenames in os.walk(bundle_path, topdown=True):
+        directories[:] = [
+            name for name in directories if name not in {".git", ".obsidian"}
+        ]
+        for filename in filenames:
+            path = Path(root) / filename
+            if not path.is_file():
+                continue
+            relative = path.relative_to(bundle_path)
+            posix = relative.as_posix()
+            if (
+                ".git" in relative.parts
+                or posix.endswith(".conflict.md")
+                or path.name in {DIRTY_MARKER, SYNC_MARKER, PAIR_STATE, ".gitignore"}
+                or path.name.startswith(DIRTY_MARKER + ".tmp-")
+                or path.name.startswith(SYNC_MARKER + ".tmp-")
+                or path.name.startswith(PAIR_STATE + ".tmp-")
+                or path.name.startswith(".") and ".tmp-" in path.name
+            ):
+                continue
+            files.append(path)
     return sorted(files, key=lambda item: item.relative_to(bundle_path).as_posix())
 
 
