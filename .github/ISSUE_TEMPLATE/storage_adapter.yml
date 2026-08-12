@@ -1,0 +1,81 @@
+name: Storage adapter proposal or report
+description: Add or verify an immutable snapshot backend without changing the source of truth.
+title: "[Storage]: "
+labels: []
+body:
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter and provider family
+      placeholder: Native S3-compatible adapter for S3, R2, MinIO, and Wasabi
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Evidence stage
+      options:
+        - Proposed only
+        - Implemented but not repo-tested
+        - Repo-tested with synthetic data
+        - Live-verified with a named provider/runtime
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: User job and reason the existing backends are insufficient
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Dependency, credentials, and least-privilege model
+      description: Name dependencies and permission classes. Never paste actual credentials, DSNs, account IDs, or rclone configuration.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: conformance
+    attributes:
+      label: Snapshot conformance
+      description: Confirm the proposed contract. Explain any not-applicable item under limitations.
+      options:
+        - label: The OKF Bundle remains authoritative; this adapter is an immutable backup mirror, not bidirectional sync.
+          required: true
+        - label: The adapter implements push, pull, and list without adding remote delete or prune behavior.
+          required: true
+        - label: Canonical manifest/archive bytes and the content-derived snapshot ID are preserved and verified after pull.
+          required: true
+        - label: Repeated identical pushes are idempotent and same-ID/different-bytes conflicts are refused.
+          required: true
+        - label: Optional dependencies and configuration are resolved lazily, so local snapshots still work without them.
+          required: true
+        - label: Credentials remain in provider configuration or named environment variables and never appear in arguments, output, fixtures, or docs.
+          required: true
+        - label: Synthetic tests cover round trip, listing/newest selection, duplicate push, missing snapshot, corrupt/incomplete data, and missing configuration/dependencies.
+          required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: For live verification, include provider/runtime versions, date, synthetic commands, and restored hash. Do not include real note content.
+
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Consistency, retention, encryption, cost, and restore limitations
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Data safety
+      options:
+        - label: All examples and evidence use synthetic Bundle content and contain no credentials, DSNs, private notes, or identifying account details.
+          required: true

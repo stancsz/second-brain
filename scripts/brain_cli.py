@@ -14,7 +14,7 @@ Usage:
   python brain_cli.py relate <from> <to> --type expands --strength 0.8
   python brain_cli.py related <id> [--source manual|wikilink|all]
   python brain_cli.py traverse <id> [--depth 2] [--limit 20]
-  python brain_cli.py export [--collection C] [--format json|markdown|csv] [--output PATH]
+  python brain_cli.py export [--collection C] [--format json|markdown|csv] [--output PATH] [--attachments-from VAULT]
   python brain_cli.py import <path> [--merge|--replace]
   python brain_cli.py stats [--collection C]
   python brain_cli.py summary [--cold-days 180]
@@ -22,7 +22,8 @@ Usage:
   python brain_cli.py archive --output <path> [--older-than-days 180] [--dry-run]
   python brain_cli.py merge-brain --from <path>
 
-Output is human-readable. Pass --json to any read command for machine output.
+Output is human-readable. Put the global option before a read command for
+machine output, for example: ``brain_cli.py --json search "query"``.
 """
 import argparse
 import json
@@ -31,6 +32,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from brain import SecondBrain
+from store import (
+    canonical_mutation,
+    canonical_replacement_guard,
+    open_brain,
+    recover_if_dirty,
+    replace_canonical,
+)
 
 # Windows consoles default to cp1252; emojis break. Reconfigure if possible.
 try:
@@ -63,16 +71,25 @@ def _parse_affect_arg(raw):
     return val
 
 
-def _fmt_concept_line(i, d):
+def _fmt_concept_line(i, d, id_ref=None):
     tags = f" [{', '.join(d['tags'])}]" if d["tags"] else ""
     coll = f" [{d['collection']}]" if d["collection"] else ""
     return (f"{i}. {d['title']}{coll}{tags}\n"
-            f"   \"{_short(d['content'])}\"\n   {d['id'][:8]}")
+            f"   \"{_short(d['content'])}\"\n   {id_ref or d['id'][:8]}")
+
+
+def _fmt_concept_lines(brain, concepts, separator="\n\n"):
+    """Render Concepts with database-wide unique, actionable ID prefixes."""
+    return separator.join(
+        _fmt_concept_line(i + 1, concept, brain.short_id(concept["id"]))
+        for i, concept in enumerate(concepts)
+    )
 
 
 def main():
     p = argparse.ArgumentParser(prog="brain")
-    p.add_argument("--db", default=None)
+    p.add_argument("--db", default=None, help="working SQLite index (default: SECONDBRAIN_DB or ~/.secondbrain/brain.db)")
+    p.add_argument("--bundle", default=None, help="canonical OKF Bundle (default: SECONDBRAIN_BUNDLE, ~/.secondbrain/okf, or a custom-db sibling)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -137,6 +154,7 @@ def main():
 
     e = sub.add_parser("export")
     e.add_argument("--collection"); e.add_argument("--format", default="json"); e.add_argument("--output")
+    e.add_argument("--attachments-from", help="copy non-Markdown files from an existing vault during Markdown export")
 
     im = sub.add_parser("import"); im.add_argument("path")
     im.add_argument("--merge", action="store_true"); im.add_argument("--replace", action="store_true")
@@ -174,7 +192,9 @@ def main():
                     help="path to a brain.db whose concepts will be merged into the working brain")
 
     args = p.parse_args()
-    b = SecondBrain(args.db) if args.db else SecondBrain()
+    b = open_brain(args.db, args.bundle)
+
+    recover_if_dirty(b, args.bundle)
 
     def out(obj, human):
         if args.json:
@@ -192,24 +212,24 @@ def main():
                 content = args.content
             tags = [x.strip() for x in (args.tags or "").split(",") if x.strip()]
             affect = _parse_affect_arg(args.affect)
-            dr = b.add(args.title, content, args.collection, tags, args.source or [],
-                       sb_subject=args.subject, sb_affect=affect,
-                       sb_valid_from=args.valid_from, sb_valid_to=args.valid_to,
-                       sb_supersedes=args.supersedes)
-            links = b.related(dr["id"], source="wikilink")
-            msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
-            if links:
-                msg += "\n   â†’ linked: " + ", ".join(x["title"] for x in links)
-            pend = [pl for pl in b.con.execute(
-                "SELECT target_title FROM pending_links WHERE from_id=?", (dr["id"],))]
-            if pend:
-                msg += "\n   â³ pending: " + ", ".join(x[0] for x in pend)
+            with canonical_mutation(b, args.bundle):
+                dr = b.add(args.title, content, args.collection, tags, args.source or [],
+                           sb_subject=args.subject, sb_affect=affect,
+                           sb_valid_from=args.valid_from, sb_valid_to=args.valid_to,
+                           sb_supersedes=args.supersedes)
+                links = b.related(dr["id"], source="wikilink")
+                msg = f"âœ… Saved \"{dr['title']}\"  {dr['id'][:8]}"
+                if links:
+                    msg += "\n   â†’ linked: " + ", ".join(x["title"] for x in links)
+                pend = [pl for pl in b.con.execute(
+                    "SELECT target_title FROM pending_links WHERE from_id=?", (dr["id"],))]
+                if pend:
+                    msg += "\n   â³ pending: " + ", ".join(x[0] for x in pend)
             out(dr, msg)
 
         elif args.cmd == "search":
             res = b.search(args.query, args.collection, args.tag, args.limit)
-            human = f"ðŸ“š {len(res)} results\n\n" + "\n\n".join(
-                _fmt_concept_line(i + 1, d) for i, d in enumerate(res)) if res \
+            human = f"ðŸ“š {len(res)} results\n\n" + _fmt_concept_lines(b, res) if res \
                 else "No results. Try broader terms or check the collection/tag filter."
             out(res, human)
 
@@ -232,7 +252,7 @@ def main():
                     sub_in = b.DEFAULT_SUBJECT_PATH
                     res = b.subject_subgraph(sub_in)[:args.limit]
             human = (f"🧠 subject sub-graph: {sub_in} ({len(res)} concepts)\n\n" +
-                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     _fmt_concept_lines(b, res)
                      ) if res else f"No concepts for subject '{sub_in}'."
             out({"subject": sub_in, "concepts": res}, human)
 
@@ -243,7 +263,7 @@ def main():
             if args.query:
                 header += f"  query={args.query!r}"
             human = (f"{header}  ({len(res)} concepts)\n\n" +
-                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     _fmt_concept_lines(b, res)
                      ) if res else f"No concepts valid at {args.as_of}."
             out({"as_of": args.as_of, "query": args.query, "concepts": res}, human)
 
@@ -259,7 +279,7 @@ def main():
                 "max_arousal": args.max_arousal, "min_intensity": args.min_intensity,
             }.items() if v is not None}
             human = (f"🎭 affect recall {filt} ({len(res)} concepts)\n\n" +
-                     "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res))
+                     _fmt_concept_lines(b, res)
                      ) if res else f"No concepts match affect filter {filt or '(none)'}."
             out({"filters": filt, "concepts": res}, human)
 
@@ -269,9 +289,9 @@ def main():
             if not matches:
                 out(None, f"No live concept matches '{args.ident}'.")
             elif len(matches) > 1:
-                human = f"âš ï¸ {len(matches)} concepts match '{args.ident}':\n\n" + "\n\n".join(
-                    _fmt_concept_line(i + 1, d) for i, d in enumerate(matches)) + \
-                    "\n\nRe-run with the 8-char id to pick one."
+                human = f"âš ï¸ {len(matches)} concepts match '{args.ident}':\n\n" + \
+                    _fmt_concept_lines(b, matches) + \
+                    "\n\nRe-run with one of the shown IDs to pick one."
                 out(matches, human)
             else:
                 dd = matches[0]
@@ -309,21 +329,24 @@ def main():
                 kw["sb_valid_to"] = args.valid_to or None
             if args.supersedes is not None:
                 kw["sb_supersedes"] = args.supersedes or None
-            dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
+            with canonical_mutation(b, args.bundle):
+                dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
             out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 
         elif args.cmd == "delete":
-            ok = b.delete(args.id, args.hard)
+            with canonical_mutation(b, args.bundle):
+                ok = b.delete(args.id, args.hard)
             kind = "hard-deleted (permanent)" if args.hard else "soft-deleted (recover with restore)"
             out({"ok": ok}, f"{'ðŸ—‘ï¸ ' + kind if ok else 'Nothing to delete'}: {args.id[:8]}")
 
         elif args.cmd == "restore":
-            ok = b.restore(args.id)
+            with canonical_mutation(b, args.bundle):
+                ok = b.restore(args.id)
             out({"ok": ok}, f"â™»ï¸ Restored {args.id[:8]}" if ok else f"Nothing to restore: {args.id[:8]}")
 
         elif args.cmd == "list":
             res = b.list(args.collection, args.tag, args.limit, args.offset, args.sort)
-            human = "\n\n".join(_fmt_concept_line(i + 1, d) for i, d in enumerate(res)) or "Empty."
+            human = _fmt_concept_lines(b, res) or "Empty."
             out(res, human)
 
         elif args.cmd == "collections":
@@ -339,7 +362,8 @@ def main():
 
         elif args.cmd == "relate":
             try:
-                rid = b.relate(args.from_id, args.to_id, args.type, args.strength)
+                with canonical_mutation(b, args.bundle):
+                    rid = b.relate(args.from_id, args.to_id, args.type, args.strength)
                 out({"id": rid}, f"ðŸ”— {args.from_id[:8]} â€”{args.type}â†’ {args.to_id[:8]}")
             except ValueError as ex:
                 out({"error": str(ex)}, f"âŒ {ex}")
@@ -359,11 +383,12 @@ def main():
         elif args.cmd == "export":
             if args.format == "markdown" and args.output:
                 try:
-                    res = b.export_vault(args.output, args.collection)
+                    res = b.export_vault(args.output, args.collection, args.attachments_from)
                 except Exception as ex:
                     out({"error": str(ex)}, f"âŒ {ex}")
                     sys.exit(1)
-                print(f"ðŸ’¾ Exported {res['concepts']} notes â†’ {res['path']}/")
+                suffix = f" plus {res['attachments']} attachments" if res.get("attachments") else ""
+                print(f"ðŸ’¾ Exported {res['concepts']} notes{suffix} â†’ {res['path']}/")
             else:
                 data = b.export(args.collection, args.format)
                 if args.output:
@@ -374,7 +399,8 @@ def main():
 
         elif args.cmd == "import":
             mode = "replace" if args.replace else "merge"
-            res = b.import_(args.path, mode)
+            with canonical_mutation(b, args.bundle):
+                res = b.import_(args.path, mode)
             out(res, f"ðŸ“¥ Imported: {res['added']} added, {res['skipped']} skipped ({mode})")
 
         elif args.cmd == "stats":
@@ -449,11 +475,25 @@ def main():
                     os.replace(new_path, target)
                     new_path = target
 
-                ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+                ts = datetime.now().strftime("%Y%m%dT%H%M%S%f")
                 backup = working.with_suffix(f".db.bak-{ts}")
-                b.checkpoint_and_close()
-                os.replace(working, backup)
-                os.replace(new_path, working)
+                # Mark and lock the Bundle before the first database rename. A
+                # crash can no longer expose a clean-looking old Bundle beside
+                # a newly activated database.
+                with canonical_replacement_guard(working, args.bundle):
+                    b.checkpoint_and_close()
+                    os.replace(working, backup)
+                    try:
+                        os.replace(new_path, working)
+                    except BaseException:
+                        if not working.exists() and backup.exists():
+                            os.replace(backup, working)
+                        raise
+                    activated = SecondBrain(working)
+                    try:
+                        replace_canonical(activated, args.bundle)
+                    finally:
+                        activated.close()
                 human = (
                     f"âœ¨ Distilled {res['concepts']:,} concepts â†’ {working}\n"
                     f"   tags:        {res['tags']:,}\n"
@@ -478,9 +518,34 @@ def main():
         elif args.cmd == "archive":
             tags = args.tag or []
             try:
-                res = b.archive(args.output, older_than_days=args.older_than_days,
-                                before_date=args.before, tags=tags or None,
-                                collection=args.collection, dry_run=args.dry_run)
+                if args.dry_run:
+                    res = b.archive(args.output, older_than_days=args.older_than_days,
+                                    before_date=args.before, tags=tags or None,
+                                    collection=args.collection, dry_run=True)
+                else:
+                    archive_path = Path(args.output)
+                    archive_existed = archive_path.exists()
+                    try:
+                        with canonical_mutation(b, args.bundle):
+                            res = b.archive(
+                                args.output,
+                                older_than_days=args.older_than_days,
+                                before_date=args.before,
+                                tags=tags or None,
+                                collection=args.collection,
+                                dry_run=False,
+                            )
+                    except BaseException:
+                        # A failed write-through rolls the source rows back, so
+                        # remove only an archive this invocation created. This
+                        # keeps the command atomic across its external output.
+                        if not archive_existed:
+                            for suffix in ("", "-wal", "-shm", "-journal"):
+                                try:
+                                    Path(str(archive_path) + suffix).unlink()
+                                except FileNotFoundError:
+                                    pass
+                        raise
             except (ValueError, FileExistsError) as ex:
                 out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)
@@ -506,7 +571,8 @@ def main():
 
         elif args.cmd == "merge-brain":
             try:
-                res = b.merge_brain(args.source)
+                with canonical_mutation(b, args.bundle):
+                    res = b.merge_brain(args.source)
             except FileNotFoundError as ex:
                 out({"error": str(ex)}, f"âŒ {ex}")
                 sys.exit(1)

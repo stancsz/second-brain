@@ -1,0 +1,4 @@
+interface:
+  display_name: "Second Brain"
+  short_description: "Capture and recall your local knowledge graph"
+  default_prompt: "Use $second-brain to save and recall durable personal knowledge."

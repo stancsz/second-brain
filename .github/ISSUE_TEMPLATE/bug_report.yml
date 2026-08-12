@@ -1,0 +1,90 @@
+name: Bug report
+description: Report reproducible incorrect behavior using synthetic data.
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve second-brain. Use a temporary brain and synthetic notes. Do not include real notes, transcripts, databases, credentials, keys, DSNs, or full provider configuration.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Local engine or CLI
+        - Agent Skill package
+        - MCP server
+        - Obsidian import or export
+        - Git synchronization
+        - Storage snapshot or adapter
+        - Claude Code hooks
+        - Documentation or website
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include a release tag or full commit SHA.
+      placeholder: v0.2.0 or 0123456789abcdef...
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, and relevant host/provider version.
+      placeholder: Windows 11; Python 3.14.0; Codex x.y.z
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Synthetic reproduction
+      description: Give the smallest sequence that reproduces the problem in a temporary directory.
+      placeholder: |
+        1. Create a temporary Bundle containing `Example.md` with invented content.
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized evidence
+      description: Paste only the minimum redacted output. A screenshot must use synthetic content.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Checks run
+      description: Include relevant test results and whether the public release gate passes.
+      placeholder: |
+        python scripts/validate_skill.py . -> PASS
+        python scripts/run_corpus.py -> PASS/FAIL (include failing test name)
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and security confirmation
+      options:
+        - label: I used synthetic data and removed private notes, transcripts, databases, credentials, keys, DSNs, and identifying paths.
+          required: true
+        - label: This is not a vulnerability report. If it is, I will use the private process in SECURITY.md.
+          required: true

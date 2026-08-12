@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added
+- Portable Agent Skills metadata and setup guidance for Claude Code, Codex,
+  Gemini CLI, OpenCode, and Cline, with a content-free host readiness report.
+- A dependency-free MCP subprocess test covering initialization, tool discovery,
+  add, and search.
+- Deterministic, verified snapshot storage for local files, rclone-backed
+  S3-compatible/GCS/Azure/R2/B2/MinIO/Wasabi remotes, PostgreSQL, and Supabase.
+- Recursive Obsidian-format import/export with aliases, fragments, nested paths,
+  preserved unknown frontmatter, manual relations, and opt-in attachment
+  mirroring.
+- Canonical-store locking, pair receipts, crash/sync journals, stale-writer
+  refusal, staged rebuilds, and public CI/Pages/release workflows.
+- Security, threat-model, governance, compatibility, and open-source SaaS
+  strategy documentation.
+- A community adapter contract covering immutable identity, verification,
+  privacy gating, and safe restore semantics.
+- Isolated MCP registration/health smokes for Claude Code 2.1.146, Gemini CLI
+  0.26.0, Codex 0.87.0, OpenCode 1.15.10, and Cline 3.0.51; these do not claim
+  model-backed fresh-session activation.
+
+### Changed
+- README and GitHub Pages messaging now separates repository-tested behavior
+  from native host activation and live provider certification.
+- Local and rclone snapshot listings now fail closed on archive-only orphan
+  objects instead of silently hiding incomplete uploads.
+
 ## [0.2.0] - 2026-06-20
 
 ### Added

@@ -26,13 +26,18 @@ Design decisions worth knowing:
 import json
 import re
 import sqlite3
+import shutil
 import uuid
 from datetime import date as _date
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 DB_PATH = Path.home() / ".secondbrain" / "brain.db"
 WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 VALID_REL_TYPES = {"references", "contradicts", "expands", "related"}
+HEX_ID_RE = re.compile(r"^[0-9a-f]+$", re.IGNORECASE)
+MIN_ID_PREFIX_LENGTH = 8
+OBSIDIAN_PATH_KEY = "sb_obsidian_path"
+OBSIDIAN_FRONTMATTER_KEY = "sb_obsidian_frontmatter"
 
 # Sentinel for "argument not passed" — distinguishes None (explicit clear) from
 # omitted (leave alone). Used by update() to avoid clobbering sb_subject when
@@ -40,18 +45,51 @@ VALID_REL_TYPES = {"references", "contradicts", "expands", "related"}
 _UNSET = object()
 
 
+class AmbiguousConceptId(ValueError):
+    """A hexadecimal Concept-id prefix matched more than one Concept."""
+
+    def __init__(self, reference: str, matches: list[str]):
+        self.reference = reference
+        self.matches = tuple(matches)
+        super().__init__(
+            f"ambiguous concept id prefix {reference!r}; matches: "
+            + ", ".join(matches)
+        )
+
+
 def _uuid() -> str:
     return uuid.uuid4().hex
+
+
+def _wikilink_target(raw: str) -> str:
+    """Return the note-title portion of an Obsidian wikilink.
+
+    Obsidian keeps display aliases and heading/block fragments inside the
+    brackets (for example ``[[Note#Heading|label]]``), but graph resolution is
+    against ``Note``.  The stored Markdown is never rewritten; this helper is
+    used only to derive the relation target.
+    """
+    target = raw.split("|", 1)[0]
+    # In Markdown tables Obsidian aliases are commonly written as ``\|``.
+    if target.endswith("\\") and "|" in raw:
+        target = target[:-1]
+    return target.split("#", 1)[0].strip()
 
 
 class SecondBrain:
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = Path(db_path)
+        self._defer_commits = False
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.con = sqlite3.connect(self.db_path)
         self.con.row_factory = sqlite3.Row
         self.con.execute("PRAGMA foreign_keys = ON")
         self._ensure_schema()
+
+    def _commit(self):
+        """Commit unless a canonical write-through transaction owns the boundary."""
+        if not self._defer_commits:
+            self.con.commit()
 
     def _ensure_schema(self):
         self._migrate_v21_to_concepts()
@@ -191,7 +229,11 @@ class SecondBrain:
         self.con.execute("DELETE FROM pending_links WHERE from_id = ?", (concept_id,))
         seen = set()
         for raw in WIKILINK_RE.findall(content or ""):
-            title = raw.strip()
+            title = _wikilink_target(raw)
+            # [[#Heading]] / [[#^block-id]] are links within this note. They do
+            # not create graph edges or unresolved-link backlog entries.
+            if not title:
+                continue
             key = title.lower()
             if key in seen:
                 continue
@@ -261,7 +303,7 @@ class SecondBrain:
         self._sync_subject_index_for(did)
         self._sync_affect_for(did, sb_affect)
         self._sync_validity_for(did, sb_valid_from, sb_valid_to, sb_supersedes)
-        self.con.commit()
+        self._commit()
         return self.get(did)
 
     # -- subjects (G08 / R10) -------------------------------------------------
@@ -383,7 +425,7 @@ class SecondBrain:
                 (r["id"], subject_id),
             )
             links += 1
-        self.con.commit()
+        self._commit()
         return len(person_paths) + 1, links
 
     def subjects(self) -> list[dict]:
@@ -481,7 +523,7 @@ class SecondBrain:
             if self._normalize_affect(meta.get("sb_affect")) is not None:
                 self._sync_affect_for(r["id"], meta.get("sb_affect"))
                 n += 1
-        self.con.commit()
+        self._commit()
         return n
 
     def affect(self, concept_id: str) -> dict | None:
@@ -489,6 +531,9 @@ class SecondBrain:
 
         Keys: valence, arousal, emotion, intensity. Any dimension may be None.
         """
+        concept_id = self._resolve_concept_id(concept_id, "live")
+        if concept_id is None:
+            return None
         r = self.con.execute(
             "SELECT valence, arousal, emotion, intensity FROM affect WHERE concept_id=?",
             (concept_id,),
@@ -641,12 +686,15 @@ class SecondBrain:
             if self._normalize_validity(vf, vt, sup, strict=False) is not None:
                 self._sync_validity_for(r["id"], vf, vt, sup, strict=False)
                 n += 1
-        self.con.commit()
+        self._commit()
         return n
 
     def validity(self, concept_id: str) -> dict | None:
         """Return {valid_from, valid_to, supersedes} for a Concept, or None if it
         carries no validity window (→ valid since created_at, still valid)."""
+        concept_id = self._resolve_concept_id(concept_id, "live")
+        if concept_id is None:
+            return None
         r = self.con.execute(
             "SELECT valid_from, valid_to, supersedes FROM validity WHERE concept_id=?",
             (concept_id,),
@@ -663,14 +711,15 @@ class SecondBrain:
         """
         if as_of is None:
             as_of = _date.today().isoformat()
-        if self.get(old_id) is None:
+        canonical_old_id = self._resolve_concept_id(old_id, "live")
+        if canonical_old_id is None:
             raise ValueError(f"cannot supersede unknown concept: {old_id}")
         # Close the old fact's window at as_of (its valid_from, if any, is kept).
-        self.update(old_id, sb_valid_to=as_of)
+        self.update(canonical_old_id, sb_valid_to=as_of)
         # Create the new fact, linked to the old via sb_supersedes.
         return self.add(title, content, collection=collection, tags=tags,
                         sources=sources, sb_subject=sb_subject, sb_affect=sb_affect,
-                        sb_valid_from=as_of, sb_supersedes=old_id)
+                        sb_valid_from=as_of, sb_supersedes=canonical_old_id)
 
     def recall_as_of(self, as_of: str, query: str | None = None,
                      collection: str | None = None, limit: int = 50) -> list[dict]:
@@ -720,14 +769,110 @@ class SecondBrain:
         rows = self.con.execute(" ".join(sql), params).fetchall()
         return [self._row_to_concept(r) for r in rows]
 
+    @staticmethod
+    def _id_state_matches(row, state: str) -> bool:
+        if state == "live":
+            return row["deleted_at"] is None
+        if state == "deleted":
+            return row["deleted_at"] is not None
+        return True
+
+    def _matching_concept_ids(self, reference, state: str = "live") -> list[str]:
+        """Return canonical IDs matching an exact ID or eligible hex prefix.
+
+        Exact stored IDs always win, including imported short/non-hex IDs. Only
+        hexadecimal references of at least eight characters expand as prefixes.
+        Prefix comparison is case-insensitive. ``state`` is ``live``, ``deleted``,
+        or ``all`` and prevents a deleted exact ID from resolving to a longer live
+        ID (or vice versa).
+        """
+        if not isinstance(reference, str) or not reference:
+            return []
+
+        exact = self.con.execute(
+            "SELECT id, deleted_at FROM concepts WHERE id = ?", (reference,)
+        ).fetchone()
+        if exact is not None:
+            return [exact["id"]] if self._id_state_matches(exact, state) else []
+
+        if (
+            len(reference) < MIN_ID_PREFIX_LENGTH
+            or not HEX_ID_RE.fullmatch(reference)
+        ):
+            return []
+
+        rows = self.con.execute(
+            "SELECT id, deleted_at FROM concepts "
+            "WHERE lower(substr(id, 1, ?)) = lower(?)",
+            (len(reference), reference),
+        ).fetchall()
+        rows = [
+            row for row in rows
+            if HEX_ID_RE.fullmatch(row["id"] or "")
+            and len(row["id"]) >= len(reference)
+        ]
+
+        # A case-insensitive full-ID match has exact-ID precedence over longer
+        # IDs sharing it as a prefix.
+        same_length = [row for row in rows if len(row["id"]) == len(reference)]
+        if same_length:
+            rows = same_length
+        rows = [row for row in rows if self._id_state_matches(row, state)]
+        return sorted((row["id"] for row in rows), key=str.casefold)
+
+    def _resolve_concept_id(
+        self, reference, state: str = "live", *, ambiguous: str = "raise"
+    ) -> str | None:
+        matches = self._matching_concept_ids(reference, state)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1 and ambiguous == "raise":
+            raise AmbiguousConceptId(reference, matches)
+        return None
+
+    def short_id(self, concept_id: str, min_length: int = MIN_ID_PREFIX_LENGTH) -> str:
+        """Return the shortest database-wide resolvable live ID reference."""
+        if not isinstance(concept_id, str) or not concept_id:
+            return concept_id
+        if not HEX_ID_RE.fullmatch(concept_id) or len(concept_id) <= min_length:
+            return concept_id
+        live_ids = [
+            row["id"] for row in self.con.execute(
+                "SELECT id FROM concepts WHERE deleted_at IS NULL"
+            ).fetchall()
+            if HEX_ID_RE.fullmatch(row["id"] or "")
+        ]
+        for width in range(min_length, len(concept_id) + 1):
+            prefix = concept_id[:width]
+            if sum(item.casefold().startswith(prefix.casefold()) for item in live_ids) == 1:
+                return prefix
+        # Case-only duplicate IDs cannot have a case-insensitive unique prefix,
+        # but an exact stored ID remains resolvable by exact-match precedence.
+        return concept_id
+
     def get(self, concept_id):
+        canonical_id = self._resolve_concept_id(
+            concept_id, "live", ambiguous="none"
+        )
+        if canonical_id is None:
+            return None
         row = self.con.execute(
-            "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL", (concept_id,)
+            "SELECT * FROM concepts WHERE id = ? AND deleted_at IS NULL",
+            (canonical_id,),
         ).fetchone()
         return self._row_to_concept(row) if row else None
 
     def get_by_title(self, needle):
-        """Substring match on title, live concepts only, most recent first."""
+        """Resolve ID-prefix ambiguity, else substring-match a live title."""
+        id_matches = self._matching_concept_ids(needle, "live")
+        if id_matches:
+            placeholders = ",".join("?" for _ in id_matches)
+            rows = self.con.execute(
+                f"SELECT * FROM concepts WHERE id IN ({placeholders}) "
+                "AND deleted_at IS NULL ORDER BY updated_at DESC, id",
+                id_matches,
+            ).fetchall()
+            return [self._row_to_concept(row) for row in rows]
         rows = self.con.execute(
             "SELECT * FROM concepts WHERE title LIKE ? AND deleted_at IS NULL "
             "ORDER BY updated_at DESC LIMIT 10",
@@ -738,6 +883,9 @@ class SecondBrain:
     def update(self, concept_id, title=None, content=None, tags=None,
                collection=None, sources=None, sb_subject=_UNSET, sb_affect=_UNSET,
                sb_valid_from=_UNSET, sb_valid_to=_UNSET, sb_supersedes=_UNSET):
+        concept_id = self._resolve_concept_id(concept_id, "live")
+        if concept_id is None:
+            return None
         cur = self.get(concept_id)
         if not cur:
             return None
@@ -797,10 +945,15 @@ class SecondBrain:
         # Re-sync validity row if any temporal field was explicitly set or cleared
         if sb_valid_from is not _UNSET or sb_valid_to is not _UNSET or sb_supersedes is not _UNSET:
             self._sync_validity_for(concept_id, new_vf, new_vt, new_sup)
-        self.con.commit()
+        self._commit()
         return self.get(concept_id)
 
     def delete(self, concept_id, hard=False):
+        concept_id = self._resolve_concept_id(
+            concept_id, "all" if hard else "live"
+        )
+        if concept_id is None:
+            return False
         if hard:
             # FK ON DELETE CASCADE cleans relations/tags/pending; AD trigger fixes FTS.
             n = self.con.execute("DELETE FROM concepts WHERE id=?", (concept_id,)).rowcount
@@ -810,10 +963,13 @@ class SecondBrain:
                 "WHERE id=? AND deleted_at IS NULL",
                 (concept_id,),
             ).rowcount
-        self.con.commit()
+        self._commit()
         return n > 0
 
     def restore(self, concept_id):
+        concept_id = self._resolve_concept_id(concept_id, "deleted")
+        if concept_id is None:
+            return False
         n = self.con.execute(
             "UPDATE concepts SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL",
             (concept_id,),
@@ -838,7 +994,7 @@ class SecondBrain:
             self._sync_validity_for(concept_id, meta.get("sb_valid_from"),
                                     meta.get("sb_valid_to"), meta.get("sb_supersedes"),
                                     strict=False)
-            self.con.commit()
+            self._commit()
         return n > 0
 
     # -- search & list -------------------------------------------------------
@@ -909,19 +1065,34 @@ class SecondBrain:
     def relate(self, from_id, to_id, relation_type="related", strength=0.5):
         if relation_type not in VALID_REL_TYPES:
             raise ValueError(f"relation_type must be one of {sorted(VALID_REL_TYPES)}")
-        if not self.get(from_id) or not self.get(to_id):
+        canonical_from = self._resolve_concept_id(from_id, "live")
+        canonical_to = self._resolve_concept_id(to_id, "live")
+        if canonical_from is None or canonical_to is None:
             raise ValueError("both concepts must exist and be live")
+        from_id, to_id = canonical_from, canonical_to
+        if from_id == to_id:
+            raise ValueError("a concept cannot have a manual relation to itself")
+        if self.con.execute(
+            "SELECT 1 FROM relations WHERE from_id=? AND to_id=? AND source='manual'",
+            (from_id, to_id),
+        ).fetchone():
+            raise ValueError("manual relation already exists between these concepts")
         rid = _uuid()
-        self.con.execute(
+        inserted = self.con.execute(
             "INSERT OR IGNORE INTO relations "
             "(id, from_id, to_id, relation_type, strength, source) "
             "VALUES (?, ?, ?, ?, ?, 'manual')",
             (rid, from_id, to_id, relation_type, strength),
         )
-        self.con.commit()
+        if inserted.rowcount != 1:
+            raise ValueError("manual relation already exists between these concepts")
+        self._commit()
         return rid
 
     def related(self, concept_id, limit=20, source="all"):
+        concept_id = self._resolve_concept_id(concept_id, "live")
+        if concept_id is None:
+            return []
         src_filter = "" if source == "all" else "AND r.source = :src"
         # Both directions; exclude edges touching soft-deleted concepts.
         rows = self.con.execute(
@@ -939,6 +1110,9 @@ class SecondBrain:
         return [dict(r) for r in rows]
 
     def traverse(self, concept_id, depth=2, limit=20):
+        concept_id = self._resolve_concept_id(concept_id, "live")
+        if concept_id is None:
+            return []
         rows = self.con.execute(
             """
             WITH RECURSIVE walk(id, hop) AS (
@@ -1028,7 +1202,8 @@ class SecondBrain:
 
     def _concept_to_md(self, d: dict) -> str:
         """Render one concept as a Markdown document with YAML frontmatter."""
-        fm = self._yaml_frontmatter({
+        metadata = d.get("metadata") or {}
+        fields = {
             "id": d["id"],
             "title": d["title"],
             "collection": d.get("collection"),
@@ -1036,7 +1211,24 @@ class SecondBrain:
             "sources": d.get("sources", []),
             "created_at": d.get("created_at", ""),
             "updated_at": d.get("updated_at", ""),
-        })
+        }
+        # Keep the original vault-relative path as an explicit, namespaced
+        # extension. It is only emitted when known; new notes retain the
+        # historical title-based layout.
+        if metadata.get(OBSIDIAN_PATH_KEY):
+            fields[OBSIDIAN_PATH_KEY] = metadata[OBSIDIAN_PATH_KEY]
+        fm = self._yaml_frontmatter(fields)
+        raw_blocks = metadata.get(OBSIDIAN_FRONTMATTER_KEY) or []
+        if isinstance(raw_blocks, list):
+            safe_blocks = [
+                str(block).strip("\n") for block in raw_blocks
+                if isinstance(block, str)
+                and block.strip()
+                and "\n---" not in ("\n" + block)
+                and block.strip() != "---"
+            ]
+            if safe_blocks:
+                fm = fm[:-3] + "\n" + "\n".join(safe_blocks) + "\n---"
         return f"{fm}\n\n# {d['title']}\n\n{d['content']}\n"
 
     # -- export / import -----------------------------------------------------
@@ -1058,28 +1250,103 @@ class SecondBrain:
             return buf.getvalue()
         raise ValueError("format must be json|markdown|csv")
 
-    def export_vault(self, output_dir, collection=None) -> dict:
+    def export_vault(self, output_dir, collection=None, attachments_from=None) -> dict:
         """Write one Markdown file per concept into output_dir (Obsidian-compatible vault).
         Filenames are derived from titles; duplicates get a short-id suffix.
+        If ``attachments_from`` is supplied, copy non-Markdown regular files
+        from that existing vault using the same relative paths. This is an
+        explicit, non-persistent mirror operation; attachments are never
+        silently imported into the canonical SQLite/OKF model.
         Returns {"concepts": N, "path": str(output_dir)}."""
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         concepts = self.list(collection=collection, limit=10**9)
-        seen: dict = {}
+        seen: set[str] = set()
         written = 0
         for d in concepts:
-            stem = self._safe_filename(d["title"])
-            if stem in seen:
-                stem = f"{stem}_{d['id'][:8]}"
-            seen[stem] = True
-            (output_dir / f"{stem}.md").write_text(
+            metadata = d.get("metadata") or {}
+            relative = self._safe_vault_path(
+                metadata.get(OBSIDIAN_PATH_KEY), d["title"], d["id"]
+            )
+            if relative in seen:
+                path = Path(relative)
+                relative = f"{path.with_suffix('')}_{d['id'][:8]}{path.suffix}"
+            seen.add(relative)
+            target = output_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
                 self._concept_to_md(d), encoding="utf-8"
             )
             written += 1
-        return {"concepts": written, "path": str(output_dir)}
+        attachments = self._mirror_vault_attachments(attachments_from, output_dir)
+        return {"concepts": written, "attachments": attachments, "path": str(output_dir)}
 
     @staticmethod
-    def _parse_md_note(text: str) -> "dict | None":
+    def _mirror_vault_attachments(source_dir, output_dir) -> int:
+        if source_dir is None:
+            return 0
+        source = Path(source_dir).expanduser().resolve()
+        if not source.is_dir():
+            raise ValueError(f"attachments source is not a directory: {source}")
+        destination = Path(output_dir).expanduser().resolve()
+        copied = 0
+        candidates = list(source.rglob("*"))
+        for path in candidates:
+            relative = path.relative_to(source)
+            if ".git" in relative.parts:
+                continue
+            if path.is_symlink():
+                raise ValueError(f"attachment source contains a symlink: {path}")
+            if not path.is_file() or path.suffix.lower() in (".md", ".markdown"):
+                continue
+            target = destination / relative
+            try:
+                target.resolve().relative_to(destination)
+            except ValueError as exc:
+                raise ValueError(f"attachment path escapes export directory: {relative}") from exc
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                if target.is_symlink() or target.read_bytes() != path.read_bytes():
+                    raise ValueError(f"attachment collision at export path: {relative}")
+                continue
+            shutil.copyfile(path, target)
+            copied += 1
+        return copied
+
+    @staticmethod
+    def _safe_vault_path(raw_path: str | None, title: str, concept_id: str) -> str:
+        """Return a safe vault-relative path, falling back to a title slug.
+
+        Obsidian permits nested folders and both `.md` and `.markdown`; paths
+        are preserved only as relative data and can never escape the chosen
+        export directory. Unknown/unsafe paths deliberately fall back to the
+        existing title-based filename behavior.
+        """
+        fallback = f"{SecondBrain._safe_filename(title)}.md"
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return fallback
+        candidate = raw_path.strip().replace("\\", "/")
+        posix = PurePosixPath(candidate)
+        windows = PureWindowsPath(candidate)
+        if (posix.is_absolute() or windows.is_absolute() or windows.drive
+                or not candidate.lower().endswith((".md", ".markdown"))):
+            return fallback
+        parts = candidate.split("/")
+        if any(not part or part in (".", "..") or "\x00" in part for part in parts):
+            return fallback
+        # Sanitize individual names without allowing separators back in.
+        clean_parts = [SecondBrain._safe_filename(part) for part in parts[:-1]]
+        filename = parts[-1]
+        stem = SecondBrain._safe_filename(Path(filename).stem)
+        suffix = Path(filename).suffix.lower()
+        if suffix not in (".md", ".markdown") or not stem:
+            return fallback
+        clean_parts.append(stem + suffix)
+        result = "/".join(clean_parts)
+        return result or fallback
+
+    @staticmethod
+    def _parse_md_note(text: str, source_path: str | None = None) -> "dict | None":
         """Parse a single Markdown note (YAML frontmatter + # heading + body).
         Returns a raw concept dict or None if the text is not a valid note."""
         text = text.strip()
@@ -1096,9 +1363,27 @@ class SecondBrain:
 
         # Minimal YAML parser for the known frontmatter format.
         fm: dict = {}
+        known_keys = {
+            "id", "title", "collection", "tags", "sources", "created_at",
+            "updated_at", OBSIDIAN_PATH_KEY,
+        }
+        unknown_blocks: list[str] = []
+        active_unknown: list[str] | None = None
         cur_list: "str | None" = None
         for line in fm_lines:
             if not line.strip():
+                continue
+            if line and not line[0].isspace() and ":" in line:
+                key = line.partition(":")[0].strip()
+                if key not in known_keys:
+                    active_unknown = [line]
+                    unknown_blocks.append("\n".join(active_unknown))
+                    cur_list = None
+                    continue
+                active_unknown = None
+            elif active_unknown is not None:
+                active_unknown.append(line)
+                unknown_blocks[-1] = "\n".join(active_unknown)
                 continue
             if line.startswith("  - ") and cur_list is not None:
                 raw = line[4:].strip()
@@ -1137,6 +1422,12 @@ class SecondBrain:
         if not title:
             return None
 
+        metadata = {}
+        preserved_path = fm.get(OBSIDIAN_PATH_KEY) or source_path
+        if isinstance(preserved_path, str) and preserved_path.strip():
+            metadata[OBSIDIAN_PATH_KEY] = preserved_path.replace("\\", "/")
+        if unknown_blocks:
+            metadata[OBSIDIAN_FRONTMATTER_KEY] = unknown_blocks
         return {
             "id": fm.get("id") or _uuid(),
             "title": title,
@@ -1144,7 +1435,7 @@ class SecondBrain:
             "collection": fm.get("collection") or None,
             "tags": fm.get("tags", []) if isinstance(fm.get("tags"), list) else [],
             "sources": fm.get("sources", []) if isinstance(fm.get("sources"), list) else [],
-            "metadata": {},
+            "metadata": metadata,
         }
 
     def _import_concepts(self, data: list, mode: str) -> dict:
@@ -1171,14 +1462,21 @@ class SecondBrain:
         for d in self.list(limit=10**9):
             self._sync_wikilinks(d["id"], d["content"])
             self._resolve_pending_to(d["id"], d["title"])
-        self.con.commit()
+        self._commit()
         return {"added": added, "skipped": skipped}
 
     def _import_vault(self, vault_dir: Path, mode: str) -> dict:
-        """Import all .md files from a vault directory."""
+        """Recursively import Markdown notes from an Obsidian-style vault."""
         concepts = []
-        for f in sorted(vault_dir.glob("*.md")):
-            d = self._parse_md_note(f.read_text(encoding="utf-8"))
+        markdown_files = (
+            f for f in vault_dir.rglob("*")
+            if f.is_file() and f.suffix.lower() in (".md", ".markdown")
+        )
+        for f in sorted(markdown_files):
+            d = self._parse_md_note(
+                f.read_text(encoding="utf-8"),
+                f.relative_to(vault_dir).as_posix(),
+            )
             if d:
                 concepts.append(d)
         return self._import_concepts(concepts, mode)
@@ -1188,7 +1486,7 @@ class SecondBrain:
         if path.is_dir():
             return self._import_vault(path, mode)
         if path.suffix.lower() in (".md", ".markdown"):
-            d = self._parse_md_note(path.read_text(encoding="utf-8"))
+            d = self._parse_md_note(path.read_text(encoding="utf-8"), path.name)
             return self._import_concepts([d] if d else [], mode)
         data = json.loads(path.read_text())
         return self._import_concepts(data, mode)
@@ -1484,9 +1782,13 @@ class SecondBrain:
         self.con.execute(
             f"DELETE FROM concepts WHERE id IN ({placeholders})", list(target_ids)
         )
-        self.con.commit()
-        self.checkpoint()  # flush WAL so renames are clean
-        self.con.execute("VACUUM")  # reclaim space
+        self._commit()
+        # A canonical write-through transaction owns the commit boundary and
+        # cannot VACUUM until its Bundle export succeeds. Standalone callers
+        # retain the historical checkpoint/space-reclaim behavior.
+        if not self._defer_commits:
+            self.checkpoint()  # flush WAL so renames are clean
+            self.con.execute("VACUUM")  # reclaim space
 
         size_after = self.db_path.stat().st_size
         return {
@@ -1618,7 +1920,7 @@ class SecondBrain:
             if d:
                 self._resolve_pending_to(did, d["title"])
 
-        self.con.commit()
+        self._commit()
         src.close()
         return {
             "concepts_added": added_concepts,

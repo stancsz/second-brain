@@ -1,0 +1,85 @@
+name: Agent host compatibility handshake
+description: Report a reproducible skill or MCP handshake in a named agent host.
+title: "[Host]: "
+labels: []
+body:
+  - type: input
+    id: host
+    attributes:
+      label: Host and exact version
+      placeholder: Gemini CLI x.y.z
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Ubuntu 24.04, Windows 11, or macOS 15
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package release or commit and verification date
+      placeholder: v0.2.0 / full commit SHA; YYYY-MM-DD UTC
+    validations:
+      required: true
+
+  - type: textarea
+    id: install
+    attributes:
+      label: Install and discovery
+      description: Give the sanitized install method and project/user scope, then state whether the host listed `second-brain`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: skill_handshake
+    attributes:
+      label: Skill handshake
+      description: Use synthetic content. Record the trigger prompt, whether the skill was selected, and whether CLI save/recall returned the same Concept ID.
+      placeholder: |
+        Trigger:
+        Skill listed: pass/fail/not observable
+        Skill selected: pass/fail/not observable
+        Save and recall Concept ID: pass/fail/not tested
+    validations:
+      required: true
+
+  - type: textarea
+    id: mcp_handshake
+    attributes:
+      label: MCP handshake
+      description: Complete when the host supports local stdio MCP; otherwise write "not supported".
+      placeholder: |
+        Server launch: pass/fail/not supported
+        initialize: pass/fail/not tested
+        tools/list: pass/fail/not tested
+        brain_add: pass/fail/not tested
+        brain_search returned the same Concept ID: pass/fail/not tested
+    validations:
+      required: true
+
+  - type: textarea
+    id: automation
+    attributes:
+      label: Host lifecycle automation
+      description: State whether hooks or lifecycle APIs were tested and what consent prompts appeared.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence, cleanup, and limitations
+      description: Attach minimum output or screenshots, confirm isolated test data was removed, and list gaps.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Data safety
+      options:
+        - label: I used an isolated home/data directory and synthetic notes, and removed credentials, tokens, private prompts, transcripts, databases, and identifying paths from this report.
+          required: true

@@ -31,6 +31,7 @@ from pathlib import Path
 # brain.py lives next to this file; import it without assuming CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from brain import SecondBrain  # noqa: E402
+from store import canonical_mutation, open_brain, recover_if_dirty  # noqa: E402
 
 # stdout carries JSON-RPC; force UTF-8 but never print anything else there.
 try:
@@ -163,7 +164,14 @@ TOOLS = [
 
 def _h_add(b, a):
     tags = a.get("tags") or []
-    dr = b.add(a["title"], a["content"], a.get("collection"), tags, a.get("sources") or [])
+    with canonical_mutation(b):
+        dr = b.add(
+            a["title"],
+            a["content"],
+            a.get("collection"),
+            tags,
+            a.get("sources") or [],
+        )
     links = b.related(dr["id"], source="wikilink")
     res = {"id": dr["id"], "title": dr["title"],
            "linked": [x["title"] for x in links]}
@@ -273,9 +281,14 @@ def _handle(req, brain_holder):
         if handler is None:
             return _error(req_id, -32602, f"Unknown tool: {name}")
         try:
-            if brain_holder["brain"] is None:
-                brain_holder["brain"] = SecondBrain()
-            text = handler(brain_holder["brain"], args)
+            # Open a fresh paired projection for every request. A long-lived
+            # MCP process must not retain a SQLite inode across CLI/Git rebuilds
+            # (Windows would block replacement; POSIX would read stale data).
+            active = open_brain()
+            try:
+                text = handler(active, args)
+            finally:
+                active.close()
             return _result(req_id, {"content": [{"type": "text", "text": text}]})
         except Exception as ex:  # surface tool errors to the client, don't crash
             _log(f"tool {name} failed: {ex}")
@@ -307,8 +320,6 @@ def main():
         if resp is not None:
             sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
             sys.stdout.flush()
-    if brain_holder["brain"] is not None:
-        brain_holder["brain"].close()
     _log("stdin closed, exiting")
 
 

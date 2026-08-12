@@ -6,6 +6,8 @@ or:        python tests/test_brain.py
 """
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from brain import SecondBrain
+import bundle
 
 
 class TestBrain(unittest.TestCase):
@@ -30,6 +33,15 @@ class TestBrain(unittest.TestCase):
             self.b.close()
         except Exception:
             pass
+
+    def _insert_fixed_concept(self, concept_id, title, content="fixed content"):
+        """Insert a deterministic ID for prefix-resolution tests."""
+        self.b.con.execute(
+            "INSERT INTO concepts (id, title, content) VALUES (?, ?, ?)",
+            (concept_id, title, content),
+        )
+        self.b.con.commit()
+        return self.b.get(concept_id)
 
     # -----------------------------------------------------------------------
     # 1. Basic CRUD
@@ -92,6 +104,212 @@ class TestBrain(unittest.TestCase):
         titles = [d["title"] for d in self.b.list(limit=100)]
         self.assertIn("Visible", titles)
         self.assertNotIn("Hidden", titles)
+
+    def test_unique_case_insensitive_id_prefix_and_title_compatibility(self):
+        concept_id = "AbCdEf12" + "0" * 24
+        concept = self._insert_fixed_concept(
+            concept_id, "Readable Prefix Title", "prefix lookup body"
+        )
+
+        self.assertEqual(self.b.get("aBcDeF12")["id"], concept_id)
+        self.assertEqual(self.b.get(concept_id)["title"], "Readable Prefix Title")
+        self.assertEqual(
+            self.b.get_by_title("Readable Prefix Title")[0]["id"], concept_id
+        )
+
+        # Fewer than eight hex characters are title text, never an ID prefix.
+        title_match = self._insert_fixed_concept(
+            "legacy-note-id", "abcdef1", "short hex-looking title"
+        )
+        self.assertIsNone(self.b.get("abcdef1"))
+        self.assertEqual(self.b.get_by_title("abcdef1")[0]["id"], title_match["id"])
+
+        # Exact imported IDs retain priority even when they are short or non-hex.
+        short_id = self._insert_fixed_concept("abc1234", "Short imported ID")
+        self.assertEqual(self.b.get("abc1234")["id"], short_id["id"])
+        self.assertEqual(self.b.get("legacy-note-id")["id"], title_match["id"])
+
+        exact_hex_id = self._insert_fixed_concept("01234567", "Exact hex ID")
+        self._insert_fixed_concept("01234567" + "0" * 24, "Longer shared prefix")
+        self.assertEqual(self.b.get("01234567")["id"], exact_hex_id["id"])
+
+    def test_ambiguous_prefix_refuses_to_guess_and_surfaces_candidates(self):
+        first_id = "deadbeef0" + "0" * 23
+        second_id = "deadbeef1" + "0" * 23
+        self._insert_fixed_concept(first_id, "First collision")
+        self._insert_fixed_concept(second_id, "Second collision")
+
+        self.assertIsNone(self.b.get("DEADBEEF"))
+        matches = self.b.get_by_title("DEADBEEF")
+        self.assertEqual({row["id"] for row in matches}, {first_id, second_id})
+        self.assertEqual(self.b.short_id(first_id), "deadbeef0")
+        self.assertEqual(self.b.short_id(second_id), "deadbeef1")
+
+        operations = (
+            lambda: self.b.update("deadbeef", content="must not update"),
+            lambda: self.b.delete("deadbeef"),
+            lambda: self.b.delete("deadbeef", hard=True),
+            lambda: self.b.affect("deadbeef"),
+            lambda: self.b.validity("deadbeef"),
+            lambda: self.b.supersede(
+                "deadbeef", "Must not supersede", "must not be created"
+            ),
+            lambda: self.b.relate("deadbeef", first_id),
+            lambda: self.b.related("deadbeef"),
+            lambda: self.b.traverse("deadbeef"),
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(ValueError, "ambiguous concept id prefix"):
+                    operation()
+
+    def test_prefix_update_delete_restore_and_hard_delete_paths(self):
+        concept_id = "cafebabe" + "1" * 24
+        self._insert_fixed_concept(concept_id, "Mutable by prefix")
+
+        updated = self.b.update("CAFEBABE", content="updated through prefix")
+        self.assertEqual(updated["id"], concept_id)
+        self.assertEqual(self.b.get(concept_id)["content"], "updated through prefix")
+
+        self.assertTrue(self.b.delete("cAfEbAbE"))
+        self.assertIsNone(self.b.get(concept_id))
+        self.assertTrue(self.b.restore("CAFEBABE"))
+        self.assertEqual(self.b.get(concept_id)["title"], "Mutable by prefix")
+
+        self.assertTrue(self.b.delete("cafebabe", hard=True))
+        row = self.b.con.execute(
+            "SELECT 1 FROM concepts WHERE id=?", (concept_id,)
+        ).fetchone()
+        self.assertIsNone(row)
+
+    def test_ambiguous_deleted_prefix_refuses_restore(self):
+        first_id = "facefeed0" + "0" * 23
+        second_id = "facefeed1" + "0" * 23
+        self._insert_fixed_concept(first_id, "Deleted collision one")
+        self._insert_fixed_concept(second_id, "Deleted collision two")
+        self.assertTrue(self.b.delete(first_id))
+        self.assertTrue(self.b.delete(second_id))
+
+        with self.assertRaisesRegex(ValueError, "ambiguous concept id prefix"):
+            self.b.restore("FACEFEED")
+
+    def test_prefix_relate_related_traverse_affect_validity_and_supersede(self):
+        source_id = "11111111" + "0" * 24
+        target_id = "22222222" + "0" * 24
+        self._insert_fixed_concept(source_id, "Prefix source")
+        self._insert_fixed_concept(target_id, "Prefix target")
+
+        self.b.update(
+            "11111111",
+            sb_affect={"emotion": "focused", "intensity": 0.7},
+            sb_valid_from="2026-01-01",
+        )
+        self.assertEqual(self.b.affect("11111111")["emotion"], "focused")
+        self.assertEqual(self.b.validity("11111111")["valid_from"], "2026-01-01")
+
+        self.b.relate("11111111", "22222222", "expands", 0.8)
+        self.assertEqual(self.b.related("11111111", source="manual")[0]["id"], target_id)
+        self.assertEqual(self.b.traverse("11111111", depth=1)[0]["id"], target_id)
+        with self.assertRaisesRegex(ValueError, "itself"):
+            self.b.relate(source_id, "11111111")
+
+        replacement = self.b.supersede(
+            "11111111", "Replacement fact", "new truth", as_of="2026-02-01"
+        )
+        self.assertEqual(self.b.validity(replacement["id"])["supersedes"], source_id)
+
+    def test_deferred_commit_keeps_mutations_rollbackable(self):
+        import sqlite3
+
+        self.b._defer_commits = True
+        try:
+            added = self.b.add("Deferred", "uncommitted canary")
+            # A raw read connection avoids SecondBrain's schema setup, which
+            # correctly cannot acquire a write lock while this transaction is open.
+            observer = sqlite3.connect(self.b.db_path)
+            try:
+                row = observer.execute(
+                    "SELECT 1 FROM concepts WHERE id=?", (added["id"],)
+                ).fetchone()
+                self.assertIsNone(row)
+            finally:
+                observer.close()
+
+            self.b.con.rollback()
+            self.assertIsNone(self.b.get(added["id"]))
+        finally:
+            self.b._defer_commits = False
+
+    def test_deferred_archive_skips_checkpoint_and_vacuum(self):
+        archived = self.b.add("Cold", "archive me", collection="cold")
+        self.b.add("Keep", "stay here", collection="hot")
+        statements = []
+        self.b.con.set_trace_callback(statements.append)
+        self.b._defer_commits = True
+        try:
+            result = self.b.archive(
+                Path(self.tmpdir) / "cold.db", collection="cold"
+            )
+            self.assertEqual(result["archived"], 1)
+            self.assertIsNone(self.b.get(archived["id"]))
+            self.assertFalse(any("VACUUM" in sql.upper() for sql in statements))
+
+            self.b.con.rollback()
+            self.assertIsNotNone(self.b.get(archived["id"]))
+        finally:
+            self.b._defer_commits = False
+            self.b.con.set_trace_callback(None)
+
+    def test_cli_show_ambiguous_prefix_prints_actionable_unique_ids(self):
+        first_id = "deadbeef0" + "0" * 23
+        second_id = "deadbeef1" + "0" * 23
+        self._insert_fixed_concept(first_id, "CLI collision one")
+        self._insert_fixed_concept(second_id, "CLI collision two")
+        self.b.close()
+
+        cli = Path(__file__).parent.parent / "scripts" / "brain_cli.py"
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "utf-8"
+        ambiguous = subprocess.run(
+            [
+                sys.executable,
+                str(cli),
+                "--db",
+                str(Path(self.tmpdir) / "brain.db"),
+                "show",
+                "DEADBEEF",
+            ],
+            cwd=Path(__file__).parent.parent,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(ambiguous.returncode, 0, ambiguous.stdout + ambiguous.stderr)
+        self.assertIn("deadbeef0", ambiguous.stdout)
+        self.assertIn("deadbeef1", ambiguous.stdout)
+        self.assertIn("Re-run with one of the shown IDs", ambiguous.stdout)
+
+        resolved = subprocess.run(
+            [
+                sys.executable,
+                str(cli),
+                "--db",
+                str(Path(self.tmpdir) / "brain.db"),
+                "show",
+                "DEADBEEF0",
+            ],
+            cwd=Path(__file__).parent.parent,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
+        self.assertIn("# CLI collision one", resolved.stdout)
+        self.assertNotIn("concepts match", resolved.stdout)
 
     # -----------------------------------------------------------------------
     # 2. FTS triggers: update — old content gone, new content findable
@@ -217,6 +435,31 @@ class TestBrain(unittest.TestCase):
         rels = self.b.related(source["id"])
         self.assertTrue(any(r["id"] == target["id"] for r in rels))
 
+    def test_obsidian_wikilink_alias_and_fragments_resolve_without_rewriting(self):
+        target = self.b.add("Target Note", "target content")
+        content = (
+            "Alias [[Target Note|Readable label]], heading "
+            "[[Target Note#Details]], block [[Target Note#^block-id|Block]], "
+            "and table alias [[Target Note\\|Table label]]."
+        )
+        source = self.b.add("Source Note", content)
+
+        rels = self.b.related(source["id"], source="wikilink")
+        self.assertEqual([r["id"] for r in rels], [target["id"]])
+        self.assertEqual(self.b.get(source["id"])["content"], content)
+        pending = self.b.con.execute(
+            "SELECT * FROM pending_links WHERE from_id=?", (source["id"],)
+        ).fetchall()
+        self.assertEqual(pending, [])
+
+    def test_obsidian_same_note_fragments_do_not_create_pending_or_self_loop(self):
+        source = self.b.add("Local Anchors", "See [[#Heading]] and [[#^block-id]].")
+        self.assertEqual(self.b.related(source["id"], source="wikilink"), [])
+        pending = self.b.con.execute(
+            "SELECT * FROM pending_links WHERE from_id=?", (source["id"],)
+        ).fetchall()
+        self.assertEqual(pending, [])
+
     # -----------------------------------------------------------------------
     # 6. Pending links
     # -----------------------------------------------------------------------
@@ -278,6 +521,17 @@ class TestBrain(unittest.TestCase):
             "SELECT * FROM pending_links WHERE from_id=?", (src["id"],)
         ).fetchall()
         self.assertEqual(len(pending), 0)
+
+    def test_manual_relation_rejects_self_loop_and_duplicate(self):
+        source = self.b.add("Manual Source", "source")
+        target = self.b.add("Manual Target", "target")
+        with self.assertRaisesRegex(ValueError, "itself"):
+            self.b.relate(source["id"], source["id"])
+
+        self.b.relate(source["id"], target["id"], "expands", 0.8)
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.b.relate(source["id"], target["id"], "contradicts", 0.2)
+        self.assertEqual(len(self.b.related(source["id"], source="manual")), 1)
 
     # -----------------------------------------------------------------------
     # 7. Archive atomicity
@@ -568,6 +822,161 @@ class TestBrain(unittest.TestCase):
             self.assertEqual(result2["skipped"], 1)
         finally:
             b2.close()
+
+    def test_vault_import_recurses_and_accepts_markdown_extension(self):
+        first = self.b.add("Nested MD", "nested md body", collection="one")
+        second = self.b.add("Nested Markdown", "nested markdown body", collection="two")
+        vault_dir = Path(self.tmpdir) / "nested_vault"
+        deep = vault_dir / "folder" / "deeper"
+        deep.mkdir(parents=True)
+        (deep / "first.md").write_text(self.b._concept_to_md(first), encoding="utf-8")
+        (vault_dir / "folder" / "second.markdown").write_text(
+            self.b._concept_to_md(second), encoding="utf-8"
+        )
+
+        b2 = SecondBrain(Path(self.tmpdir) / "nested_import.db")
+        try:
+            result = b2.import_(vault_dir, mode="merge")
+            self.assertEqual(result, {"added": 2, "skipped": 0})
+            self.assertEqual(b2.get(first["id"])["content"], "nested md body")
+            self.assertEqual(b2.get(second["id"])["content"], "nested markdown body")
+        finally:
+            b2.close()
+
+    def test_vault_roundtrip_preserves_nested_relative_paths(self):
+        vault_dir = Path(self.tmpdir) / "source_vault"
+        nested = vault_dir / "Projects" / "2026"
+        nested.mkdir(parents=True)
+        note = nested / "launch-plan.markdown"
+        note.write_text(
+            "---\nid: nested-path-id\ntitle: Launch plan\ntags: []\n---\n\n# Launch plan\n\nKeep the nested path.\n",
+            encoding="utf-8",
+        )
+
+        imported = SecondBrain(Path(self.tmpdir) / "nested_path.db")
+        try:
+            self.assertEqual(imported.import_(vault_dir), {"added": 1, "skipped": 0})
+            exported = Path(self.tmpdir) / "roundtrip_vault"
+            imported.export_vault(exported)
+            restored = exported / "Projects" / "2026" / "launch-plan.markdown"
+            self.assertTrue(restored.exists())
+            self.assertIn("sb_obsidian_path:", restored.read_text(encoding="utf-8"))
+        finally:
+            imported.close()
+
+    def test_obsidian_path_survives_okf_bundle_rebuild(self):
+        source = Path(self.tmpdir) / "obsidian_source"
+        source.mkdir()
+        note = source / "Area" / "Note.md"
+        note.parent.mkdir()
+        note.write_text(
+            "---\nid: path-persist-id\ntitle: Path persisted\n---\n\n# Path persisted\n\nbody\n",
+            encoding="utf-8",
+        )
+        db = Path(self.tmpdir) / "path-persist.db"
+        brain = SecondBrain(db)
+        try:
+            brain.import_(source)
+            bundle_dir = Path(self.tmpdir) / "okf"
+            bundle.export(brain, bundle_dir)
+        finally:
+            brain.close()
+        rebuilt_db = Path(self.tmpdir) / "rebuilt.db"
+        rebuilt = bundle.rebuild(bundle_dir, rebuilt_db)
+        try:
+            row = rebuilt.get("path-persist-id")
+            self.assertEqual(row["metadata"].get("sb_obsidian_path"), "Area/Note.md")
+            out = Path(self.tmpdir) / "rebuilt_vault"
+            rebuilt.export_vault(out)
+            self.assertTrue((out / "Area" / "Note.md").exists())
+        finally:
+            rebuilt.close()
+
+    def test_unsafe_obsidian_path_falls_back_inside_export_root(self):
+        brain = SecondBrain(Path(self.tmpdir) / "unsafe-path.db")
+        try:
+            row = brain.add("Safe title", "body")
+            brain.con.execute(
+                "UPDATE concepts SET metadata=? WHERE id=?",
+                ('{"sb_obsidian_path":"../../escape.md"}', row["id"]),
+            )
+            brain.con.commit()
+            out = Path(self.tmpdir) / "safe_export"
+            brain.export_vault(out)
+            self.assertTrue((out / "Safe title.md").exists())
+            self.assertFalse((Path(self.tmpdir).parent / "escape.md").exists())
+        finally:
+            brain.close()
+
+    def test_obsidian_unknown_frontmatter_blocks_survive_roundtrip(self):
+        source = Path(self.tmpdir) / "properties"
+        source.mkdir()
+        (source / "note.md").write_text(
+            "---\nid: properties-id\ntitle: Properties\naliases:\n  - launch\n  - ship\ncssclasses: [wide, note]\ncustom:\n  owner: team\n---\n\n# Properties\n\nbody\n",
+            encoding="utf-8",
+        )
+        brain = SecondBrain(Path(self.tmpdir) / "properties.db")
+        try:
+            brain.import_(source)
+            vault = Path(self.tmpdir) / "properties-out"
+            brain.export_vault(vault)
+            rendered = (vault / "note.md").read_text(encoding="utf-8")
+            self.assertIn("aliases:\n  - launch\n  - ship", rendered)
+            self.assertIn("cssclasses: [wide, note]", rendered)
+            self.assertIn("custom:\n  owner: team", rendered)
+
+            bundle_dir = Path(self.tmpdir) / "properties-okf"
+            bundle.export(brain, bundle_dir)
+        finally:
+            brain.close()
+        rebuilt = bundle.rebuild(bundle_dir, Path(self.tmpdir) / "properties-rebuilt.db")
+        try:
+            out = Path(self.tmpdir) / "properties-rebuilt-out"
+            rebuilt.export_vault(out)
+            rendered = (out / "note.md").read_text(encoding="utf-8")
+            self.assertIn("aliases:\n  - launch\n  - ship", rendered)
+            self.assertIn("custom:\n  owner: team", rendered)
+        finally:
+            rebuilt.close()
+
+    def test_export_vault_can_explicitly_mirror_attachments(self):
+        source = Path(self.tmpdir) / "attachment-source"
+        source.mkdir()
+        (source / "image.png").write_bytes(b"png-bytes")
+        (source / "nested").mkdir()
+        (source / "nested" / "audio.mp3").write_bytes(b"audio-bytes")
+        (source / "ignored.md").write_text("not a Concept", encoding="utf-8")
+        self.b.add("Attachment note", "body")
+        destination = Path(self.tmpdir) / "attachment-export"
+        result = self.b.export_vault(destination, attachments_from=source)
+        self.assertEqual(2, result["attachments"])
+        self.assertEqual(b"png-bytes", (destination / "image.png").read_bytes())
+        self.assertEqual(b"audio-bytes", (destination / "nested" / "audio.mp3").read_bytes())
+        self.assertFalse((destination / "ignored.md").exists())
+
+    def test_export_vault_attachment_collision_fails_closed(self):
+        source = Path(self.tmpdir) / "attachment-collision-source"
+        source.mkdir()
+        (source / "image.png").write_bytes(b"source")
+        destination = Path(self.tmpdir) / "attachment-collision-export"
+        destination.mkdir()
+        (destination / "image.png").write_bytes(b"different")
+        with self.assertRaises(ValueError):
+            self.b.export_vault(destination, attachments_from=source)
+
+    @unittest.skipUnless(hasattr(Path, "symlink_to"), "symlink API unavailable")
+    def test_export_vault_attachment_symlink_fails_closed(self):
+        source = Path(self.tmpdir) / "attachment-symlink-source"
+        source.mkdir()
+        target = source / "real.bin"
+        target.write_bytes(b"bytes")
+        link = source / "linked.bin"
+        try:
+            link.symlink_to(target)
+        except OSError:
+            self.skipTest("current account cannot create symlinks")
+        with self.assertRaises(ValueError):
+            self.b.export_vault(Path(self.tmpdir) / "attachment-symlink-export", attachments_from=source)
 
     # -----------------------------------------------------------------------
     # 12. import_ from JSON (existing behavior)
@@ -1024,6 +1433,81 @@ class TestBrain(unittest.TestCase):
                                     for c in b2.subject_subgraph("/people/alex.md")))
             finally:
                 b2.close()
+
+    def test_bundle_manual_relation_round_trip_uses_okf_frontmatter(self):
+        import bundle
+        import okf
+
+        target = self.b.add("Bundle Target", "target body", collection="Reference")
+        source = self.b.add(
+            "Bundle Source", "source body with [[Bundle Target]]", collection="Notes"
+        )
+        self.b.relate(source["id"], target["id"], "contradicts", 0.75)
+
+        bundle_dir = Path(self.tmpdir) / "manual_relation_bundle"
+        bundle.export(self.b, bundle_dir)
+        source_file = next(
+            p for p in bundle_dir.rglob("*.md")
+            if f"sb_id: {source['id']}" in p.read_text(encoding="utf-8")
+        )
+        exported = okf.from_markdown(
+            source_file.read_text(encoding="utf-8"),
+            source_file.relative_to(bundle_dir).as_posix(),
+        )
+        self.assertEqual(exported["sb_relations"], [{
+            "to": "/Reference/bundle-target.md",
+            "type": "contradicts",
+            "strength": 0.75,
+        }])
+
+        rebuilt = bundle.rebuild(bundle_dir, Path(self.tmpdir) / "relations.db")
+        try:
+            rels = rebuilt.related(source["id"], source="manual")
+            self.assertEqual(len(rels), 1)
+            self.assertEqual(rels[0]["id"], target["id"])
+            self.assertEqual(rels[0]["relation_type"], "contradicts")
+            self.assertEqual(rels[0]["strength"], 0.75)
+            wikilinks = rebuilt.related(source["id"], source="wikilink")
+            self.assertEqual(len(wikilinks), 1)
+            self.assertEqual(wikilinks[0]["id"], target["id"])
+        finally:
+            rebuilt.close()
+
+    def test_bundle_relation_restore_validates_duplicate_and_self_loop(self):
+        import bundle
+
+        source = self.b.add("Relation Source", "source")
+        target = self.b.add("Relation Target", "target")
+        paths = {"source.md": source["id"], "target.md": target["id"]}
+        duplicate = [{
+            "sb_id": source["id"],
+            "sb_relations": [
+                {"to": "/target.md", "type": "related", "strength": 0.5},
+                {"to": "/target.md", "type": "expands", "strength": 0.8},
+            ],
+        }]
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            bundle._restore_manual_relations(self.b, duplicate, paths)
+        self.assertEqual(self.b.related(source["id"], source="manual"), [])
+
+        self_loop = [{
+            "sb_id": source["id"],
+            "sb_relations": [
+                {"to": "/source.md", "type": "related", "strength": 0.5},
+            ],
+        }]
+        with self.assertRaisesRegex(ValueError, "self-loop"):
+            bundle._restore_manual_relations(self.b, self_loop, paths)
+
+    def test_okf_parser_accepts_crlf_frontmatter(self):
+        import okf
+
+        parsed = okf.from_markdown(
+            "---\r\ntype: Note\r\nsb_id: crlf-id\r\ntitle: CRLF\r\n---\r\n\r\nBody\r\nline\r\n",
+            path="crlf.md",
+        )
+        self.assertEqual(parsed["sb_id"], "crlf-id")
+        self.assertEqual(parsed["body"], "Body\nline")
 
     def test_restore_plain_note_no_spurious_psych_rows(self):
         plain = self.b.add("Plain", "no psych dims")

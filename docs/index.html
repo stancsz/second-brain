@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151713">
+  <meta name="description" content="One portable memory for Claude, Codex, Gemini, OpenCode, and Cline—stored as Markdown in your own vault.">
+  <meta property="og:title" content="second-brain — one memory, every agent, your files">
+  <meta property="og:description" content="A local-first Agent Skill and MCP server backed by plain Markdown and a rebuildable SQLite index.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://stancsz.github.io/second-brain/">
+  <meta name="twitter:card" content="summary">
+  <title>second-brain — portable memory for AI agents</title>
+  <link rel="stylesheet" href="./assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="second-brain home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>second-brain</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#proof">Proof</a>
+      <a href="#compatibility">Compatibility</a>
+      <a href="#architecture">Architecture</a>
+      <a href="https://github.com/stancsz/second-brain">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> Local-first agent memory</p>
+        <h1>One memory.<br>Every agent.<br><em>Your files.</em></h1>
+        <p class="lede">
+          Carry decisions, context, and durable knowledge across Claude, Codex,
+          Gemini, OpenCode, and Cline. The canonical store is readable Markdown in
+          your vault—not an opaque memory API.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#install">Install locally — free</a>
+          <a class="button button-secondary" href="https://github.com/stancsz/second-brain">View source</a>
+        </div>
+        <p class="fine-print">MIT licensed · Python standard-library core · no account required</p>
+      </div>
+
+      <div class="continuity-card" aria-label="Cross-agent continuity example">
+        <div class="card-topline">
+          <span>continuity proof</span>
+          <span class="live-pill">local</span>
+        </div>
+        <div class="agent-turn">
+          <span class="agent-label">CLAUDE</span>
+          <p>Remember that Project Atlas uses SQLite because the Markdown Bundle stays canonical.</p>
+        </div>
+        <div class="memory-write">
+          <span class="write-icon" aria-hidden="true">↳</span>
+          <code>Saved 7c12a4e9.</code>
+        </div>
+        <div class="agent-turn second">
+          <span class="agent-label">CODEX · NEW SESSION</span>
+          <p>Why did we choose SQLite for Atlas?</p>
+        </div>
+        <div class="memory-answer">
+          <p>The database is a rebuildable index. Markdown remains the source of truth.</p>
+          <code>Concept 7c12a4e9</code>
+        </div>
+        <div class="data-route" aria-label="Data route">
+          <span>agent</span><b>→</b><span>local CLI / MCP</span><b>→</b><span>your vault</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-strip" id="proof" aria-label="Project proof">
+      <div><strong>262</strong><span>engine + integration tests<br>in the checked-in suite</span></div>
+      <div><strong>0</strong><span>required Python packages<br>in the core</span></div>
+      <div><strong>2</strong><span>open interfaces<br>Agent Skills + MCP</span></div>
+      <div><strong>100%</strong><span>user-owned canonical<br>Markdown files</span></div>
+    </section>
+
+    <section class="section problem-section">
+      <div class="section-kicker">The broken default</div>
+      <div class="split-heading">
+        <h2>Your agent remembers.<br><span>Until you switch agents.</span></h2>
+        <p>
+          Coding assistants keep context inside products, sessions, and proprietary
+          stores. Your decisions fragment. Your next agent starts cold. Export is an
+          afterthought.
+        </p>
+      </div>
+      <div class="contrast-grid">
+        <article class="contrast-card muted">
+          <div class="card-index">01 / RENTED</div>
+          <h3>Memory as a service</h3>
+          <ul>
+            <li>Product-specific context</li>
+            <li>Opaque retrieval behavior</li>
+            <li>Pricing and policy drift</li>
+            <li>A migration project later</li>
+          </ul>
+        </article>
+        <article class="contrast-card bright">
+          <div class="card-index">02 / OWNED</div>
+          <h3>Memory as files</h3>
+          <ul>
+            <li>One portable Agent Skill</li>
+            <li>Markdown you can inspect and diff</li>
+            <li>SQLite you can delete and rebuild</li>
+            <li>Your git and storage accounts</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section install-section" id="install">
+      <div class="section-kicker">Start in one command</div>
+      <div class="install-grid">
+        <div>
+          <h2>Install the same skill<br>into five agent hosts.</h2>
+          <p>
+            The portable core follows the open Agent Skills <code>SKILL.md</code>
+            format. Host-specific automation is an adapter, not a fork of your memory.
+          </p>
+        </div>
+        <div class="terminal" aria-label="Installation command">
+          <div class="terminal-bar"><i></i><i></i><i></i><span>terminal</span></div>
+          <pre><code id="install-command">npx skills add stancsz/second-brain \
+  --skill second-brain --global --copy -y \
+  --agent claude-code codex gemini-cli opencode cline</code></pre>
+          <button class="copy-button" data-copy-target="install-command">Copy command</button>
+        </div>
+      </div>
+      <p class="install-note">
+        Prefer no Node tooling? Clone the repository into your host's documented
+        skills directory. The CLI itself only needs Python and SQLite.
+      </p>
+      <p class="install-note">
+        After copying, run <code>python scripts/brain_doctor.py --json</code> for
+        a read-only, content-free package, MCP, and pairing report.
+        Run <code>python scripts/host_matrix.py --json</code> for the five-host
+        package/MCP readiness matrix; native host activation remains a manual gate.
+      </p>
+    </section>
+
+    <section class="section" id="compatibility">
+      <div class="section-kicker">Compatibility without hand-waving</div>
+      <div class="split-heading">
+        <h2>One standard core.<br><span>Honest host differences.</span></h2>
+        <p>
+          Native skill loading and the MCP protocol are portable. Automatic transcript
+          capture and prompt-time recall currently use Claude Code hooks. Other hosts
+          can use the skill and MCP server while their automation adapters mature.
+        </p>
+      </div>
+      <div class="matrix-wrap" role="region" aria-label="Agent compatibility matrix" tabindex="0">
+        <table>
+          <thead>
+            <tr><th>Host</th><th>Agent Skill</th><th>Local MCP</th><th>Auto hooks</th><th>Evidence level</th></tr>
+          </thead>
+          <tbody>
+            <tr><th>Claude Code</th><td><span class="tag built">built</span></td><td><span class="tag built">built</span></td><td><span class="tag built">Claude hooks</span></td><td>Registration health smoke; handshake pending</td></tr>
+            <tr><th>Codex</th><td><span class="tag standard">standard</span></td><td><span class="tag built">protocol</span></td><td><span class="tag pending">pending</span></td><td>Registration smoke; handshake pending</td></tr>
+            <tr><th>Gemini CLI</th><td><span class="tag standard">standard</span></td><td><span class="tag built">protocol</span></td><td><span class="tag pending">pending</span></td><td>Registration smoke; handshake pending</td></tr>
+            <tr><th>OpenCode</th><td><span class="tag standard">standard</span></td><td><span class="tag built">protocol</span></td><td><span class="tag pending">pending</span></td><td>Connected config smoke; handshake pending</td></tr>
+            <tr><th>Cline</th><td><span class="tag standard">standard</span></td><td><span class="tag built">protocol</span></td><td><span class="tag pending">pending</span></td><td>Registration smoke; handshake pending</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="matrix-footnote">
+        “Standard” means the host documents Agent Skills support; it does not mean a
+        live host/version pair has passed this project's handshake yet. See the
+        <a href="https://github.com/stancsz/second-brain/blob/main/docs/COMPATIBILITY.md">evidence matrix</a>.
+      </p>
+    </section>
+
+    <section class="section architecture-section" id="architecture">
+      <div class="section-kicker">Architecture</div>
+      <div class="split-heading">
+        <h2>The database is a cache.<br><span>The files are the product.</span></h2>
+        <p>
+          This inversion is the moat. Every derived index and future cloud projection
+          must be disposable. Recovery starts from the Bundle, not from a vendor API.
+        </p>
+      </div>
+      <div class="architecture-map">
+        <div class="arch-node agents-node">
+          <small>INTERFACES</small><strong>Agent Skills · MCP · CLI</strong>
+        </div>
+        <div class="arch-arrow" aria-hidden="true">↓</div>
+        <div class="arch-node core-node">
+          <small>CANONICAL</small><strong>OKF Markdown Bundle</strong><span>human-readable · versionable · portable</span>
+        </div>
+        <div class="arch-branches" aria-label="Derived storage branches">
+          <div><small>INDEX</small><strong>SQLite</strong><span>delete + rebuild</span></div>
+          <div><small>SYNC</small><strong>Git</strong><span>revisions + conflicts</span></div>
+          <div><small>MIRRORS</small><strong>Snapshots</strong><span>object storage adapters</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section status-section">
+      <div class="section-kicker">What works today</div>
+      <div class="status-grid">
+        <article>
+          <span class="status-number">A</span>
+          <h3>Local knowledge graph</h3>
+          <p>Full-text search, tags, collections, typed links, traversal, soft delete, and point-in-time recall.</p>
+        </article>
+        <article>
+          <span class="status-number">B</span>
+          <h3>Portable interfaces</h3>
+          <p>An Agent Skills package, a dependency-free CLI, and a standalone stdio MCP server over the same brain.</p>
+        </article>
+        <article>
+          <span class="status-number">C</span>
+          <h3>Readable Markdown</h3>
+          <p>OKF frontmatter, wikilinks, recursive vault import, and tested manual-relation rebuild. Native Obsidian sync is not claimed.</p>
+        </article>
+        <article>
+          <span class="status-number">D</span>
+          <h3>Psychological structure</h3>
+          <p>Subjects, affect, temporal validity, and supersession—stored in files instead of a proprietary person model.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section beta-section">
+      <div class="beta-card">
+        <div>
+          <p class="eyebrow">Open-source SaaS direction</p>
+          <h2>Own the memory.<br>Pay for the operations.</h2>
+        </div>
+        <div>
+          <p>
+            The format, local engine, MCP server, encryption, Obsidian path, and storage
+            adapters stay open. A managed/BYOC service can charge for fleet health,
+            scheduled backups, restore drills, RBAC, audit, SSO, and support.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/stancsz/second-brain/issues">Join the design</a>
+            <a class="button button-secondary" href="https://github.com/stancsz/second-brain/blob/main/docs/OPEN_SOURCE_SAAS.md">Read the plan</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>second-brain</span></div>
+    <p>MIT licensed. Your knowledge is your intellectual history. Keep the files.</p>
+    <div><a href="https://github.com/stancsz/second-brain">GitHub</a><a href="https://github.com/stancsz/second-brain/blob/main/README.md">Docs</a><a href="https://github.com/stancsz/second-brain/blob/main/LICENSE">License</a></div>
+  </footer>
+
+  <script src="./assets/site.js" defer></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HOOKS_DIR = Path(__file__).parent.parent / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
@@ -128,6 +129,16 @@ class TestExtractText(unittest.TestCase):
 
 
 class TestWriteLog(unittest.TestCase):
+    def test_operational_log_follows_user_data_not_installed_source(self):
+        with tempfile.TemporaryDirectory() as td:
+            logs = Path(td) / "logs"
+            with mock.patch.dict(
+                os.environ, {"SECONDBRAIN_LOGS_DIR": str(logs)}, clear=False
+            ):
+                expected = Path(td) / "capture_conversation.log"
+                self.assertEqual(expected, cap._hook_log_path())
+                self.assertNotEqual(cap.SCRIPT_DIR, cap._hook_log_path().parent)
+
     def test_writes_plain_file_under_logs_dir(self):
         with tempfile.TemporaryDirectory() as td:
             os.environ["SECONDBRAIN_LOGS_DIR"] = td

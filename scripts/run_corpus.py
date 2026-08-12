@@ -1,47 +1,96 @@
 #!/usr/bin/env python3
-"""Mochu corpus runner: executes every verifier in .mochu/verifiers/REGISTRY.md.
-Exit 0 only if all green. Takes an exclusive lock on .mochu/LOCK so parallel
-loop instances cannot corrupt state. Usage: python3 scripts/run_corpus.py [repo_root]"""
-import os, re, subprocess, sys, time
+"""Run the repository's public compile and test corpus.
 
-root = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
-reg = os.path.join(root, ".mochu", "verifiers", "REGISTRY.md")
-lock = os.path.join(root, ".mochu", "LOCK")
-if not os.path.exists(reg):
-    print(f"no registry at {reg}"); sys.exit(2)
+The historical private ``.mochu`` registry is intentionally not required. This
+runner is deterministic from a clean public clone and is used by ship_gate.py.
 
-# exclusive lock (atomic create); stale if older than 2h
+Usage: python scripts/run_corpus.py [repo_root]
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import py_compile
+import subprocess
+import sys
+import time
+
+
+ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+
+# Windows PowerShell commonly starts Python with a cp1252 console. The test
+# corpus contains valid Unicode diagnostics, so the gate itself must not fail
+# while printing a green test result.
 try:
-    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.write(fd, str(os.getpid()).encode()); os.close(fd)
-except FileExistsError:
-    if time.time() - os.path.getmtime(lock) > 7200:
-        print(f"stale lock (>2h) at {lock} — removing"); os.remove(lock)
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode()); os.close(fd)
-    else:
-        print(f"another mochu instance holds the lock at {lock} — refusing to run"); sys.exit(3)
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
 
-red = []
-try:
-    rows = [l for l in open(reg) if l.strip().startswith("|") and "---" not in l]
-    entries = []
-    for l in rows:  # header identified by content, never by position
-        c = [x.strip() for x in l.strip().strip("|").split("|")]
-        if len(c) >= 4 and c[0] and c[0].lower() != "id":
-            entries.append((c[0], c[3].strip("`")))
-    if not entries:
-        print("registry has no entries"); sys.exit(2)
-    for vid, cmd in entries:
-        t = time.time()
-        r = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=900)
-        status = "GREEN" if r.returncode == 0 else "RED"
-        print(f"[{status}] {vid} ({time.time()-t:.1f}s)")
-        if r.returncode != 0:
-            red.append(vid)
-            tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
-            for ln in tail: print(f"    {ln}")
-    print(f"corpus: {len(entries)-len(red)}/{len(entries)} green" + (f" — RED: {', '.join(red)}" if red else ""))
-finally:
-    if os.path.exists(lock): os.remove(lock)
-sys.exit(1 if red else 0)
+
+def compile_python() -> bool:
+    started = time.monotonic()
+    paths = sorted(
+        path
+        for directory in ("scripts", "hooks", "tests")
+        for path in (ROOT / directory).rglob("*.py")
+    )
+    failures: list[str] = []
+    for path in paths:
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError as exc:
+            failures.append(f"{path.relative_to(ROOT)}: {exc.msg}")
+
+    status = "GREEN" if not failures else "RED"
+    print(f"[{status}] compile ({len(paths)} files, {time.monotonic() - started:.1f}s)")
+    for failure in failures:
+        print(f"    {failure}")
+    return not failures
+
+
+def run_tests() -> bool:
+    started = time.monotonic()
+    environment = os.environ.copy()
+    environment.setdefault("PYTHONUTF8", "1")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_*.py",
+            "-v",
+        ],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    status = "GREEN" if result.returncode == 0 else "RED"
+    print(f"[{status}] tests ({time.monotonic() - started:.1f}s)")
+    return result.returncode == 0
+
+
+def main() -> int:
+    if not (ROOT / "scripts").is_dir() or not (ROOT / "tests").is_dir():
+        print(f"invalid repository root: {ROOT}", file=sys.stderr)
+        return 2
+
+    checks = [compile_python(), run_tests()]
+    passed = sum(checks)
+    print(f"corpus: {passed}/{len(checks)} green")
+    return 0 if all(checks) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

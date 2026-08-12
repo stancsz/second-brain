@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security reporting instructions
+    url: https://github.com/stancsz/second-brain/blob/main/SECURITY.md
+    about: Follow the safe fallback when private reporting is unavailable; never disclose sensitive details publicly.
+  - name: Read the contribution guide
+    url: https://github.com/stancsz/second-brain/blob/main/CONTRIBUTING.md
+    about: Review the evidence language, privacy rules, and public release gate before contributing.

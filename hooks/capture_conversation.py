@@ -64,7 +64,6 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_DIR = SCRIPT_DIR.parent
 BRAIN_CLI = REPO_DIR / "scripts" / "brain_cli.py"
-LOG_FILE = SCRIPT_DIR / "capture_conversation.log"
 # Allow tests / multi-brain users to redirect the DB. The CLI accepts --db PATH.
 DB_OVERRIDE = os.environ.get("SECONDBRAIN_DB", "").strip()
 
@@ -112,10 +111,20 @@ def _logs_dir() -> Path:
     return Path.home() / ".secondbrain" / "logs"
 
 
+def _hook_log_path() -> Path:
+    """Keep the operational audit beside user data, never in installed source."""
+    override = os.environ.get("SECONDBRAIN_HOOK_LOG", "").strip()
+    if override:
+        return Path(override)
+    return _logs_dir().parent / "capture_conversation.log"
+
+
 def _log(msg: str) -> None:
     """Append a timestamped line to the hook log. Never raises."""
     try:
-        with LOG_FILE.open("a", encoding="utf-8") as f:
+        path = _hook_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
     except OSError:
         # If we can't log, give up silently — the hook must not fail loudly.
