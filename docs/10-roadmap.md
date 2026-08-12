@@ -1,5 +1,11 @@
 # SecondBrain Roadmap — iter-19 → iter-27 (RELEASE 10/15 → 15/15)
 
+> **Archived roadmap (authored 2026-06-20).** The private `.mochu` state named
+> below is absent from the public repository, and several proposals have since
+> shipped through different implementations. Do not use the release counts or
+> adapter names here as current status. See [`COMPATIBILITY.md`](./COMPATIBILITY.md),
+> [`PROJECT_REVIEW.md`](./PROJECT_REVIEW.md), and the public `ship_gate.py`.
+
 **Authored:** 2026-06-20 (after iter-18 closed R11; reviewing `docs/09-worklog-feedback.md` + iter-18 competitive intel)
 **Driver:** the mochu autonomous loop. This doc is a *design artifact* for the human; the loop's actual inputs are `.mochu/gaps.md` (scored) + `.mochu/RELEASE.md` (finish line). Every gap below is logged there with a verifier sketch.
 

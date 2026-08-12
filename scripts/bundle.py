@@ -20,7 +20,7 @@ from pathlib import Path
 
 import okf
 import crypto
-from brain import SecondBrain, _uuid  # noqa: F401
+from brain import SecondBrain, VALID_REL_TYPES, _uuid  # noqa: F401
 
 RESERVED = {"index", "log"}
 
@@ -71,9 +71,27 @@ def _unlink_retry(p, attempts=10):
             if i == attempts - 1:
                 raise
             time.sleep(0.05)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace one Bundle file atomically and durably where the OS permits."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 # Concept extension fields carried through concepts.metadata (besides okf_type).
 _SB_FIELDS = ["sb_subject", "sb_valid_from", "sb_valid_to", "sb_supersedes",
-              "sb_affect", "sb_relations", "description"]
+              "sb_affect", "sb_obsidian_path", "sb_obsidian_frontmatter",
+              "description"]
 
 
 # -- concept <-> concept ----------------------------------------------------
@@ -95,13 +113,19 @@ def _concept_to_concept(brain: SecondBrain, row) -> dict:
         "sb_valid_to": meta.get("sb_valid_to"),
         "sb_supersedes": meta.get("sb_supersedes"),
         "sb_affect": meta.get("sb_affect"),
+        "sb_obsidian_path": meta.get("sb_obsidian_path"),
+        "sb_obsidian_frontmatter": meta.get("sb_obsidian_frontmatter") or [],
         "sb_relations": meta.get("sb_relations") or [],
         "sb_deleted": row["deleted_at"],
     }
 
 
 def _concept_to_meta(concept: dict) -> dict:
-    """Pack non-column Concept fields back into concepts.metadata."""
+    """Pack non-column Concept fields back into concepts.metadata.
+
+    ``sb_relations`` is intentionally excluded: manual relations live in the
+    relations table and are materialized into frontmatter only at export time.
+    """
     meta = {}
     if concept.get("type") and concept["type"] != "Note":
         meta["okf_type"] = concept["type"]
@@ -203,15 +227,43 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
     plaintext_private = 0
 
     used: set = set()
-    # sb_id -> (actual_rel, plaintext_md, enc_meta).  enc_meta is None for a file
-    # written verbatim, or (type, sb_id) for one to be encrypted at write time.
-    desired: dict = {}
-    entries = []          # live concepts only -> index/log
+    prepared = []
+    paths_by_id: dict[str, str] = {}
     for row in rows:
         concept = _concept_to_concept(brain, row)
         deleted = bool(concept.get("sb_deleted"))
         rel = _unique_path(concept, used)             # live-style path
         actual = f".trash/{rel}" if deleted else rel   # tombstones under .trash/
+        prepared.append((row, concept, deleted, rel, actual))
+        paths_by_id[concept["sb_id"]] = rel
+
+    # OKF's typed-edge mirror is path-based. Build it from the authoritative
+    # manual relation rows after every target path is known. A metadata value is
+    # retained only as a compatibility bridge for databases rebuilt by older
+    # versions, which stored sb_relations but did not materialize relation rows.
+    manual_by_source: dict[str, list] = {}
+    for relation in brain.con.execute(
+        "SELECT from_id, to_id, relation_type, strength FROM relations "
+        "WHERE source='manual' ORDER BY from_id, to_id"
+    ).fetchall():
+        target_path = paths_by_id.get(relation["to_id"])
+        if target_path is None:
+            raise ValueError(
+                f"manual relation target {relation['to_id']!r} is missing from concepts"
+            )
+        manual_by_source.setdefault(relation["from_id"], []).append({
+            "to": f"/{target_path}",
+            "type": relation["relation_type"],
+            "strength": relation["strength"],
+        })
+
+    # sb_id -> (actual_rel, plaintext_md, enc_meta).  enc_meta is None for a file
+    # written verbatim, or (type, sb_id) for one to be encrypted at write time.
+    desired: dict = {}
+    entries = []          # live concepts only -> index/log
+    for row, concept, deleted, rel, actual in prepared:
+        if concept["sb_id"] in manual_by_source:
+            concept["sb_relations"] = manual_by_source[concept["sb_id"]]
         text = okf.to_markdown(concept)
         enc_meta = None
         if crypto.is_private(concept):
@@ -280,11 +332,9 @@ def export(brain: SecondBrain, bundle_dir) -> dict:
                     pass  # unreadable/old-key envelope — re-encrypt fresh below
             typ, sid = enc_meta
             out_text = _encrypted_markdown({"type": typ, "sb_id": sid}, plaintext)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(out_text, encoding="utf-8")
+            _atomic_write_text(target, out_text)
         elif (not target.exists()) or target.read_text(encoding="utf-8") != plaintext:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(plaintext, encoding="utf-8")
+            _atomic_write_text(target, plaintext)
     # Remove files whose concept no longer exists in the db (local hard-delete).
     for sbid, rel in current.items():
         if sbid not in desired:
@@ -315,8 +365,7 @@ def _write_indexes(bundle_dir: Path, entries: list) -> None:
             name = Path(e["rel"]).name
             desc = f" - {e['desc']}" if e["desc"] else ""
             lines.append(f"* [{e['title']}]({name}){desc}")
-        (bundle_dir / coll / "index.md").write_text("\n".join(lines) + "\n",
-                                                    encoding="utf-8")
+        _atomic_write_text(bundle_dir / coll / "index.md", "\n".join(lines) + "\n")
 
     # Root index.
     out = ['---', f'okf_version: "{okf.OKF_VERSION}"', '---', '']
@@ -332,8 +381,7 @@ def _write_indexes(bundle_dir: Path, entries: list) -> None:
             desc = f" - {e['desc']}" if e["desc"] else ""
             out.append(f"* [{e['title']}]({Path(e['rel']).name}){desc}")
         out.append("")
-    (bundle_dir / "index.md").write_text("\n".join(out).rstrip() + "\n",
-                                         encoding="utf-8")
+    _atomic_write_text(bundle_dir / "index.md", "\n".join(out).rstrip() + "\n")
 
 
 def _write_log(bundle_dir: Path, entries: list) -> None:
@@ -347,72 +395,171 @@ def _write_log(bundle_dir: Path, entries: list) -> None:
         for e in sorted(by_date[date], key=lambda x: x["title"].lower()):
             lines.append(f"* **Creation**: [{e['title']}](/{e['rel']})")
         lines.append("")
-    (bundle_dir / "log.md").write_text("\n".join(lines).rstrip() + "\n",
-                                       encoding="utf-8")
+    _atomic_write_text(bundle_dir / "log.md", "\n".join(lines).rstrip() + "\n")
 
 
 # -- rebuild ---------------------------------------------------------------
 
-def rebuild(bundle_dir, db_path) -> SecondBrain:
-    """Build a FRESH brain.db from an OKF Bundle. Any existing db at db_path is
-    replaced — the Bundle is authoritative."""
-    bundle_dir = Path(bundle_dir)
-    db_path = Path(db_path)
-    for suffix in ("", "-wal", "-shm"):
-        p = Path(str(db_path) + suffix)
-        if p.exists():
-            _unlink_retry(p)
+def _normalize_relation_path(value) -> str:
+    """Normalize an OKF bundle-relative relation target for path lookup."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("sb_relations target 'to' must be a non-empty path")
+    target = value.strip().replace("\\", "/")
+    while target.startswith("./"):
+        target = target[2:]
+    target = target.lstrip("/")
+    if target.startswith(".trash/"):
+        target = target[len(".trash/"):]
+    return target.casefold()
 
-    brain = SecondBrain(db_path)
+
+def _restore_manual_relations(brain: SecondBrain, concepts: list,
+                              ids_by_path: dict[str, str]) -> None:
+    """Validate and restore OKF ``sb_relations`` after all concepts exist."""
+    seen: set[tuple[str, str]] = set()
+    validated = []
+    for concept in concepts:
+        source_id = concept["sb_id"]
+        relations = concept.get("sb_relations") or []
+        if not isinstance(relations, list):
+            raise ValueError(f"sb_relations for {source_id!r} must be a list")
+        for relation in relations:
+            if not isinstance(relation, dict):
+                raise ValueError(f"sb_relations for {source_id!r} must contain objects")
+            target_path = _normalize_relation_path(relation.get("to"))
+            target_id = ids_by_path.get(target_path)
+            if target_id is None:
+                raise ValueError(
+                    f"sb_relations target {relation.get('to')!r} from {source_id!r} "
+                    "does not exist in the bundle"
+                )
+            if target_id == source_id:
+                raise ValueError(f"sb_relations for {source_id!r} contains a self-loop")
+            pair = (source_id, target_id)
+            if pair in seen:
+                raise ValueError(
+                    f"sb_relations for {source_id!r} contains a duplicate target"
+                )
+            seen.add(pair)
+
+            relation_type = relation.get("type", "related")
+            if relation_type not in VALID_REL_TYPES:
+                raise ValueError(f"invalid sb_relations type {relation_type!r}")
+            strength = relation.get("strength", 0.5)
+            if isinstance(strength, bool):
+                raise ValueError("sb_relations strength must be a number from 0 to 1")
+            try:
+                strength = float(strength)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "sb_relations strength must be a number from 0 to 1"
+                ) from exc
+            if not 0.0 <= strength <= 1.0:
+                raise ValueError("sb_relations strength must be a number from 0 to 1")
+            validated.append((source_id, target_id, relation_type, strength))
+
+    # Do not mutate the graph until every declaration has passed validation.
+    brain.con.executemany(
+        "INSERT INTO relations "
+        "(id, from_id, to_id, relation_type, strength, source) "
+        "VALUES (?, ?, ?, ?, ?, 'manual')",
+        [(_uuid(), source_id, target_id, relation_type, strength)
+         for source_id, target_id, relation_type, strength in validated],
+    )
+
+
+def _build_database(bundle_dir: Path, db_path: Path) -> SecondBrain:
+    """Build and validate one new projection at an unused path."""
     concepts = []
+    ids_by_path: dict[str, str] = {}
     for f in sorted(bundle_dir.rglob("*.md")):
         if f.name in ("index.md", "log.md"):
             continue
         rel = f.relative_to(bundle_dir).as_posix()
         if rel.startswith(".git/") or "/.git/" in rel or rel.endswith(".conflict.md"):
-            continue  # conflict copies await human resolution; not imported as concepts
-        # Tombstones live under .trash/; strip the prefix so the original
-        # collection is recovered from the path (sb_deleted drives the state).
+            continue
         parse_path = rel[len(".trash/"):] if rel.startswith(".trash/") else rel
-        # Decrypt private Concept envelopes back to their original OKF markdown
-        # before parsing (no-op for plaintext Concepts).
         raw = _maybe_decrypt(f.read_text(encoding="utf-8"))
-        concepts.append(okf.from_markdown(raw, path=parse_path))
+        concept = okf.from_markdown(raw, path=parse_path)
+        concept["sb_id"] = concept.get("sb_id") or _uuid()
+        path_key = _normalize_relation_path(parse_path)
+        if path_key in ids_by_path:
+            raise ValueError(f"duplicate concept path in bundle: {parse_path!r}")
+        ids_by_path[path_key] = concept["sb_id"]
+        concepts.append(concept)
 
-    # Insert all concepts first (so wikilink resolution sees the full set).
-    for c in concepts:
-        meta = _concept_to_meta(c)
-        brain.con.execute(
-            "INSERT INTO concepts (id, title, content, collection, sources, "
-            "metadata, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, "
-            "COALESCE(?, CURRENT_TIMESTAMP), ?)",
-            (c["sb_id"] or _uuid(), c["title"], c["body"] or "", c["collection"],
-             json.dumps(c["sources"] or []), json.dumps(meta),
-             c["timestamp"], c["sb_deleted"]),
-        )
-        brain._set_tags(c["sb_id"], c["tags"] or [])
+    brain = SecondBrain(db_path)
+    try:
+        # Insert all concepts first so link resolution sees the full set.
+        for c in concepts:
+            meta = _concept_to_meta(c)
+            brain.con.execute(
+                "INSERT INTO concepts (id, title, content, collection, sources, "
+                "metadata, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, "
+                "COALESCE(?, CURRENT_TIMESTAMP), ?)",
+                (c["sb_id"], c["title"], c["body"] or "", c["collection"],
+                 json.dumps(c["sources"] or []), json.dumps(meta),
+                 c["timestamp"], c["sb_deleted"]),
+            )
+            brain._set_tags(c["sb_id"], c["tags"] or [])
 
-    # Re-derive wikilink relations + resolve cross-references for ALIVE concepts.
-    for c in concepts:
-        if c["sb_deleted"]:
-            continue
-        brain._sync_wikilinks(c["sb_id"], c["body"] or "")
-    for c in concepts:
-        if c["sb_deleted"]:
-            continue
-        brain._resolve_pending_to(c["sb_id"], c["title"])
-    # Re-sync the derived subject index (subjects + concept_subject) from
-    # concepts.metadata. This is the R10 path: a persona sub-graph query must
-    # be correct after a bundle rebuild, with no separate state to keep aligned.
-    brain.rebuild_subject_index()
-    # Re-sync the derived affect index (R12) from concepts.metadata.sb_affect, so
-    # recall_by_affect() is correct after a rebuild with no separate state.
-    brain.rebuild_affect_index()
-    # Re-sync the derived validity index (R11) from concepts.metadata temporal
-    # fields, so as-of recall / supersession are correct after a rebuild.
-    brain.rebuild_validity_index()
-    brain.con.commit()
-    return brain
+        for c in concepts:
+            if not c["sb_deleted"]:
+                brain._sync_wikilinks(c["sb_id"], c["body"] or "")
+        for c in concepts:
+            if not c["sb_deleted"]:
+                brain._resolve_pending_to(c["sb_id"], c["title"])
+        _restore_manual_relations(brain, concepts, ids_by_path)
+        brain.rebuild_subject_index()
+        brain.rebuild_affect_index()
+        brain.rebuild_validity_index()
+        brain.con.commit()
+        return brain
+    except BaseException:
+        brain.close()
+        raise
+
+
+def rebuild(bundle_dir, db_path) -> SecondBrain:
+    """Atomically replace a SQLite projection from an authoritative Bundle.
+
+    Parsing, decryption, validation, and index construction happen in a sibling
+    temporary database. A malformed Bundle therefore leaves an existing target
+    untouched and does not leak a locked partial database on Windows.
+    """
+    bundle_dir = Path(bundle_dir)
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = db_path.with_name(
+        f".{db_path.name}.rebuild-{os.getpid()}-{_uuid()}.tmp"
+    )
+    staged = None
+    try:
+        staged = _build_database(bundle_dir, temporary)
+        staged.checkpoint_and_close()
+        staged = None
+        # Windows rejects FlushFileBuffers on a read-only descriptor; open the
+        # fully staged SQLite file read/write for the durability flush.
+        with temporary.open("rb+") as handle:
+            os.fsync(handle.fileno())
+
+        # A valid staged projection now exists. Remove only SQLite sidecars;
+        # os.replace keeps the previous main DB intact until the final swap.
+        for suffix in ("-wal", "-shm", "-journal"):
+            sidecar = Path(str(db_path) + suffix)
+            if sidecar.exists():
+                _unlink_retry(sidecar)
+        os.replace(temporary, db_path)
+        return SecondBrain(db_path)
+    finally:
+        if staged is not None:
+            staged.close()
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            artifact = Path(str(temporary) + suffix)
+            try:
+                artifact.unlink()
+            except FileNotFoundError:
+                pass
 
 
 if __name__ == "__main__":

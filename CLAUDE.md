@@ -1,84 +1,84 @@
-# CLAUDE.md — working in the second-brain repo
+# CLAUDE.md — working in second-brain
 
-This file orients Claude Code (and any agent) working in this repository. Read it
-first; it encodes the invariants that must not be broken and how work gets done here.
+This file orients any coding agent working in this repository. Evidence in the
+current tree takes priority over old design notes.
 
-## What this project is
+## Product
 
-`second-brain` is a **local, file-based knowledge graph for AI agents** — one SQLite
-cache over an **OKF v0.1** Bundle of markdown files, synced via git, with a native
-**psychological-memory layer** (subjects, bi-temporal validity, structured affect,
-selective encryption). Zero third-party deps in the core. The thesis: *you should own
-your memory as plain files in your own git, not rent it from a vendor.*
+`second-brain` is a local, file-based knowledge graph that carries durable
+context across agent hosts. An OKF Markdown Bundle is canonical; SQLite is a
+rebuildable projection. Agent Skills, MCP, and the CLI are portable surfaces.
+Claude Code lifecycle hooks are a host-specific adapter.
 
-- Entry points: `scripts/brain.py` (the engine), `scripts/brain_cli.py` (`brain` CLI),
-  `scripts/bundle.py` (OKF export/rebuild), `scripts/sync.py` (git sync spine),
-  `scripts/crypto.py` (optional encryption adapter), `scripts/okf.py` (serializer).
-- Skill surface: `SKILL.md` + `commands/` make it a drop-in Claude Code skill.
-- Data lives at `~/.secondbrain/` (db + OKF bundle + key); never in the repo.
+Primary entry points:
 
-## Non-negotiable architecture invariants
+- `scripts/brain.py` — engine and SQLite projection
+- `scripts/brain_cli.py` — human/agent CLI
+- `scripts/bundle.py` and `scripts/okf.py` — Bundle export and rebuild
+- `scripts/brain_mcp.py` — stdio MCP server
+- `scripts/sync.py` — bidirectional git sync
+- `scripts/storage.py` and `scripts/storage_cli.py` — immutable backup snapshots
+- `scripts/crypto.py` — optional selective encryption
+- `SKILL.md` — portable Agent Skill
 
-1. **Files are truth; SQLite is a rebuildable index.** Never make `brain.db`
-   authoritative. Anything in the DB must be reconstructable from the OKF Bundle by
-   `bundle.rebuild()`. New per-Concept data goes in `concepts.metadata` and is
-   re-derived into a SQLite table by a `rebuild_*_index()` (the "derived-index
-   pattern" — see `subjects`, `affect`, `validity`).
-2. **Stdlib-only core; optional deps are lazy adapters with a fallback.** `brain.py`
-   imports only the stdlib. Anything else (`cryptography`, future `sqlite-vec`,
-   `boto3`) is imported lazily inside an adapter and must degrade gracefully when
-   absent — never a hard dependency of the core.
-3. **Windows-first encoding discipline.** Every `open()` passes `encoding="utf-8"`;
-   scripts reconfigure `sys.stdout/stderr` to UTF-8 at entry; any text printed to a
-   child stderr must be ASCII-safe (cp1252 children crash UTF-8 readers — see G19).
-4. **Bi-temporal history is preserved, never deleted.** A contradiction closes the
-   old validity window (`supersede()`); it never overwrites or drops the old fact.
-5. **Secrets never enter the repo.** Keys live in `~/.secondbrain/`; the ship gate
-   scans for them.
+Runtime data belongs under `~/.secondbrain/`, never in this repository.
 
-## How work gets done here: the mochu loop
+## Architectural invariants
 
-This repo is driven by **mochu** (`~/.claude/skills/mochu`), a loop engineering
-harness. State lives in `.mochu/`:
+1. **Files are truth.** New durable fields must survive Bundle export and a full
+   rebuild. SQLite tables are disposable indexes.
+2. **The core is standard-library Python.** Optional dependencies are imported
+   lazily inside adapters and have tested missing-dependency errors.
+3. **Git is the only bidirectional sync path.** Storage providers are immutable
+   snapshot/restore mirrors until a merge protocol is separately designed.
+4. **Remote plaintext must be an explicit choice.** Use strict encryption mode
+   for sensitive Concepts; keys and databases must never be staged.
+5. **History is preserved.** Supersession closes an old validity window rather
+   than deleting the old fact. Soft delete remains recoverable.
+6. **Windows is a first-class platform.** Open text as UTF-8, avoid shell-only
+   assumptions in Python, and test path/case behaviour across platforms.
+7. **Claims match evidence.** “Repo-tested,” “package-validated,” “documented
+   target,” and “live-tested” are different assertions. Do not collapse them.
 
-- `ledger.md` — append-only iteration history (read the last ~5 to orient)
-- `gaps.md` — scored backlog; `RELEASE.md` — the definition of done
-- `verifiers/` + `REGISTRY.md` — the append-only verifier corpus (the ratchet)
-- `cooldown.md`, `wip/`, `INBOX.md`, `competitors.md`
+## Public release gate
 
-**The contract:** one verified gap per iteration. Verifiers are authored and frozen
-*before* product code (red-confirmed), then build to green, then the full corpus +
-`ship_gate.py` must pass. Never weaken a frozen verifier to pass.
-
-Run the loop: invoke the `mochu` skill ("run mochu" / "do an iteration"). Verify
-anything: `python scripts/run_corpus.py` and `python scripts/ship_gate.py`.
-
-## Commands you'll use
+The old private `.mochu` verifier corpus is not part of the current repository.
+Do not cite it as release evidence. The checked-in public gate is:
 
 ```bash
-python -m pytest tests/ -q            # unit tests (must stay green)
-python scripts/run_corpus.py          # run every verifier in the ratchet
-python scripts/ship_gate.py           # pre-merge gate (tamper + secrets + corpus)
-python scripts/brain_cli.py --help    # the brain CLI
-python scripts/crypto.py init         # set up the optional encryption key
+python scripts/validate_skill.py .
+python scripts/run_corpus.py
+python scripts/ship_gate.py
 ```
 
-Tests and the corpus must be green before any merge to `main`. PRs from
-`mochu/integration` are human-gated.
+`run_corpus.py` compiles Python and runs the public unit/integration suite.
+`ship_gate.py` adds package validation and a diff/untracked secret scan. CI runs
+the same core checks on Ubuntu, Windows, and macOS with Python 3.10 and 3.14.
 
-## The growth loop
+For focused work, run the narrow test first, then the full gate. Do not weaken a
+test merely to make an implementation pass.
 
-Beyond the engineering loop, a **growth loop** drives go-to-market (research → user
-pain points → marketing assets → viral/social). Its brief and process live in
-`growth/` (`growth/BRIEF.md`, `growth/LOOP.md`). The GitHub Pages landing source is
-`docs/index.md`. Treat marketing copy with the same evidence discipline: claims must
-be grounded (cite the research in `growth/BRIEF.md`), never invented.
+## Change rules
 
-## Positioning (keep messaging consistent)
+- Observe the surrounding implementation before editing.
+- Preserve unrelated and untracked files.
+- Add automated evidence for new behaviour and missing-adapter paths.
+- For host compatibility, prove a real initialize/add/search handshake when the
+  host can be automated. A config example alone is documentation.
+- For storage, prove push → wipe → pull → verified restore → rebuild. Never use
+  destructive cloud sync primitives inside an adapter.
+- For Obsidian, preserve the original Markdown body and be explicit about YAML,
+  attachment, alias, fragment, and path-resolution limits.
+- Re-read the diff, run `git diff --check`, and run the public release gate.
 
-second-brain is the **disruptor** to rented AI-memory infra. Every competitor pain
-point maps to a moat: cost cliffs (Mem0 graph = $249/mo) → $0 local; deprecated
-self-hosting (Zep Community Edition) → one SQLite file; "privacy drift" → you own the
-files + selective encryption; vendor/framework lock-in → OKF markdown in your git.
-Don't overclaim: we are FTS-first (semantic search is a roadmap adapter), and we are
-local-first by design, not a managed cloud.
+## Positioning
+
+Lead with the repeated job: a developer switches among Claude, Codex, Gemini,
+OpenCode, or Cline and recovers verified project decisions without surrendering
+the canonical store. Psychological-memory fields are a high-sensitivity optional
+capability, not the first-run pitch.
+
+Do not claim universal host support, native provider integrations, native
+Obsidian sync, end-to-end encryption, or production SaaS readiness without the
+corresponding live evidence. Current truth and gaps live in
+`docs/COMPATIBILITY.md`, `docs/PROJECT_REVIEW.md`, and `docs/THREAT_MODEL.md`.

@@ -20,7 +20,7 @@ Day-to-day use doesn't need this file.
 | Goal | Goal-based filtering | Cold storage |
 | Typical trigger | "I want to focus on X" | "Brain is full of old stuff" |
 | Effect on working brain | None (unless `--activate`) | Hard-delete after copy |
-| Atomic | The copy is atomic per concept batch | Yes — copy first, delete second; copy failure leaves the working brain untouched |
+| Atomic | The copy is atomic per concept batch | Copy-first for the source DB; the paired Bundle export is a second commit boundary |
 | Reversible | Just delete the new file | `merge-brain --from <archive>` |
 | Adds to working brain | No | No (the opposite) |
 
@@ -91,7 +91,9 @@ renamed to a `.bak-*` file.
 
 `archive` is the destructive counterpart: it copies cold/filtered
 concepts to a new archive brain, then **hard-deletes** them from the
-working brain, and runs `VACUUM` to reclaim disk space.
+working brain. Standalone calls run `VACUUM`; supported CLI calls defer
+`VACUUM` until the paired Bundle export succeeds so the source can roll back
+cleanly if Markdown export or encryption fails.
 
 ### Default criterion
 
@@ -110,7 +112,10 @@ for "I'm done with project X, archive all of it".
 The whole archive is two phases:
 
 1. **Copy** — `_copy_subset_to` writes the archive brain to disk.
-2. **Delete + VACUUM** — only if the copy succeeds.
+2. **Delete** — only if the copy succeeds.
+3. **Paired export** — the CLI writes and verifies the canonical Bundle before
+   reporting success; the archive output is removed if this second boundary
+   fails and the CLI created it.
 
 If the copy fails (disk full, permission error, output file already
 exists), the working brain is untouched. The output path must not
@@ -179,7 +184,7 @@ old as a recoverable cold store, restore on demand.
 | `summary` | < 50 ms | Three COUNT queries, one file stat |
 | `distill` (small filter, 200 matches) | < 200 ms | FTS or index lookup, copy + writes |
 | `distill` (broad, 40K matches) | 1–3 s | Most of the time is writes; consider narrowing with `--include-related-depth` instead |
-| `archive` (10K cold) | 2–5 s | Copy + delete + VACUUM; VACUUM is the slow part |
+| `archive` (10K cold) | 2–5 s | Copy + delete + verified Bundle export; standalone API calls may also VACUUM |
 | `merge-brain` (10K incoming) | 3–8 s | Idempotent skip is fast (UNIQUE on insert); re-deriving wikilinks scales with the new set |
 
 VACUUM rewrites the database file, so the wall time depends on the

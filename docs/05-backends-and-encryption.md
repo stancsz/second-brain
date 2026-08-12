@@ -1,5 +1,12 @@
 # 05 — Backup Backends & Encryption
 
+> **Historical design record (2026-06).** This file proposed native provider
+> SDKs and `age`; it is not current implementation status. The shipped surface is
+> deterministic snapshots through local, rclone, and PostgreSQL/Supabase
+> backends, documented in [`../references/storage.md`](../references/storage.md).
+> Optional selective encryption currently uses Fernet. See
+> [`COMPATIBILITY.md`](./COMPATIBILITY.md) and [`THREAT_MODEL.md`](./THREAT_MODEL.md).
+
 ## Backend (backup) interface
 ```python
 class Backend(Protocol):

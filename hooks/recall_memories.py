@@ -154,14 +154,14 @@ def _recall(prompt: str, db_path: "str | None", limit: int,
     if not query:
         return []
     try:
-        from brain import SecondBrain
+        from store import open_brain
     except Exception as ex:  # noqa: BLE001
         _log(f"could not import SecondBrain: {ex!r}")
         return []
 
     b = None
     try:
-        b = SecondBrain(db_path) if db_path else SecondBrain()
+        b = open_brain(db_path)
         # Over-fetch so we can drop excluded collections and still fill `limit`.
         raw = b.search(query, collection=only_collection, limit=limit * 4)
     except Exception as ex:  # noqa: BLE001

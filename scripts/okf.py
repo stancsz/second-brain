@@ -34,9 +34,10 @@ OKF_VERSION = "0.1"
 _SCALARS = [
     "type", "sb_id", "title", "description", "resource", "timestamp",
     "sb_subject", "sb_valid_from", "sb_valid_to", "sb_supersedes", "sb_deleted",
+    "sb_obsidian_path",
 ]
 # JSON-valued fields.
-_JSON_FIELDS = {"tags", "sb_affect", "sb_relations"}
+_JSON_FIELDS = {"tags", "sb_affect", "sb_relations", "sb_obsidian_frontmatter"}
 
 _RAW_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]*$")
 _CITATION_RE = re.compile(r"^\[\d+\]\s+(.*)$")
@@ -112,12 +113,17 @@ def to_markdown(concept: dict) -> str:
         fields["sb_affect"] = json.dumps(concept["sb_affect"], ensure_ascii=False)
     if concept.get("sb_relations"):
         fields["sb_relations"] = json.dumps(concept["sb_relations"], ensure_ascii=False)
+    if concept.get("sb_obsidian_frontmatter"):
+        fields["sb_obsidian_frontmatter"] = json.dumps(
+            concept["sb_obsidian_frontmatter"], ensure_ascii=False
+        )
 
     lines = ["---"]
     # Preserve a stable, readable key order: type & sb_id first, then the rest.
     order = ["type", "sb_id", "title", "description", "resource", "tags",
              "timestamp", "sb_subject", "sb_valid_from", "sb_valid_to",
-             "sb_supersedes", "sb_affect", "sb_relations", "sb_deleted"]
+             "sb_supersedes", "sb_affect", "sb_relations", "sb_deleted",
+             "sb_obsidian_path", "sb_obsidian_frontmatter"]
     for k in order:
         if k in fields:
             lines.append(f"{k}: {fields[k]}")
@@ -136,6 +142,9 @@ def to_markdown(concept: dict) -> str:
 
 def _split(text: str):
     """Return (frontmatter_str, body_str) or (None, None) if not OKF-shaped."""
+    # Git and Obsidian vaults may use CRLF. Normalize before locating YAML
+    # delimiters so the parser behaves identically across platforms.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.startswith("---\n"):
         return None, None
     end = text.find("\n---", 4)
@@ -204,6 +213,8 @@ def from_markdown(text: str, path: str | None = None) -> dict:
         "sb_affect": fm.get("sb_affect"),
         "sb_relations": fm.get("sb_relations") or [],
         "sb_deleted": fm.get("sb_deleted"),
+        "sb_obsidian_path": fm.get("sb_obsidian_path"),
+        "sb_obsidian_frontmatter": fm.get("sb_obsidian_frontmatter") or [],
     }
 
 

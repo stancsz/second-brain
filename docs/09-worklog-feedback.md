@@ -1,5 +1,9 @@
 # Worklog Feedback (Iter 14-20)
 
+> **Historical review.** This predates the current public compatibility, storage,
+> and security tranches. Use `COMPATIBILITY.md` and `PROJECT_REVIEW.md` for
+> present implementation status.
+
 **Date:** 2026-06-20
 **Review of:** `.mochu/ledger.md` (Iter-14 through Iter-20)
 
