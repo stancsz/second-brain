@@ -129,7 +129,7 @@ class TestGitHubPages(unittest.TestCase):
         chinese = ZH_INDEX.read_text(encoding="utf-8")
         self.assertIn('<html lang="zh-CN"', chinese)
         self.assertIn("长脑子", chinese)
-        self.assertIn("给 Agent", chinese)
+        self.assertIn("让 Agent", chinese)
         self.assertIn("install-command-zh", chinese)
         self.assertIn('href="../assets/site.css"', chinese)
         self.assertIn('src="../assets/site.js"', chinese)
