@@ -31,7 +31,9 @@ jobs:
       - name: Assemble public site
         run: |
           mkdir -p _site/assets
+          mkdir -p _site/zh
           cp docs/index.html _site/index.html
+          cp docs/zh/index.html _site/zh/index.html
           cp docs/robots.txt _site/robots.txt
           cp docs/sitemap.xml _site/sitemap.xml
           cp docs/assets/site.css _site/assets/site.css

@@ -123,6 +123,7 @@ class TestGitHubPages(unittest.TestCase):
         self.assertIn("https://stancsz.github.io/second-brain/", sitemap)
         self.assertIn("cp docs/robots.txt _site/robots.txt", (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
         self.assertIn("cp docs/sitemap.xml _site/sitemap.xml", (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
+        self.assertIn("cp docs/zh/index.html _site/zh/index.html", (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
 
     def test_chinese_landing_page_is_complete_and_linked(self):
         chinese = ZH_INDEX.read_text(encoding="utf-8")
