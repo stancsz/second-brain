@@ -94,6 +94,11 @@ nav a {
   letter-spacing: .08em;
   text-decoration: none;
 }
+nav a.language-link {
+  color: var(--signal);
+  text-transform: none;
+  letter-spacing: 0;
+}
 
 .hero {
   width: min(calc(100% - 3rem), var(--max));
@@ -347,6 +352,21 @@ footer > div:last-child { display: flex; gap: 1rem; }
   .arch-branches { grid-template-columns: 1fr; }
   footer { grid-template-columns: 1fr; justify-items: center; }
 }
+
+/* The Chinese landing page keeps the same visual system while giving CJK text
+   enough breathing room and a font stack that exists on macOS and Windows. */
+.zh-page {
+  --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Yu Gothic", sans-serif;
+  --mono: "Noto Sans Mono CJK SC", "Cascadia Code", Consolas, monospace;
+}
+.zh-page .brand { letter-spacing: 0; }
+.zh-page .hero h1 { line-height: .98; letter-spacing: -.08em; }
+.zh-page .eyebrow, .zh-page .section-kicker, .zh-page nav a,
+.zh-page .fine-print, .zh-page .install-note, .zh-page .card-index,
+.zh-page .matrix-footnote { letter-spacing: .04em; }
+.zh-page .proof-strip span { letter-spacing: 0; text-transform: none; }
+.zh-page .contrast-card li::before { content: "·"; }
 
 @media (max-width: 560px) {
   .site-header, .hero, .section, footer { width: min(calc(100% - 2rem), var(--max)); }

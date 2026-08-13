@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 INDEX = DOCS / "index.html"
+ZH_INDEX = DOCS / "zh" / "index.html"
 PUBLIC_MARKDOWN = (
     ROOT / "README.md",
     ROOT / "README.zh.md",
@@ -122,6 +123,17 @@ class TestGitHubPages(unittest.TestCase):
         self.assertIn("https://stancsz.github.io/second-brain/", sitemap)
         self.assertIn("cp docs/robots.txt _site/robots.txt", (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
         self.assertIn("cp docs/sitemap.xml _site/sitemap.xml", (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
+
+    def test_chinese_landing_page_is_complete_and_linked(self):
+        chinese = ZH_INDEX.read_text(encoding="utf-8")
+        self.assertIn('<html lang="zh-CN"', chinese)
+        self.assertIn("长脑子", chinese)
+        self.assertIn("给 Agent", chinese)
+        self.assertIn("install-command-zh", chinese)
+        self.assertIn('href="../assets/site.css"', chinese)
+        self.assertIn('src="../assets/site.js"', chinese)
+        self.assertIn('href="./zh/"', self.html)
+        self.assertIn("https://stancsz.github.io/second-brain/zh/", (DOCS / "sitemap.xml").read_text(encoding="utf-8"))
 
     def test_install_command_names_every_supported_host(self):
         command = " ".join(self.page.text_by_id["install-command"]).replace("\\", " ")

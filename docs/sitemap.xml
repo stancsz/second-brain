@@ -3,4 +3,9 @@
   <url>
     <loc>https://stancsz.github.io/second-brain/</loc>
   </url>
+  <url>
+    <loc>https://stancsz.github.io/second-brain/zh/</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://stancsz.github.io/second-brain/zh/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://stancsz.github.io/second-brain/" />
+  </url>
 </urlset>

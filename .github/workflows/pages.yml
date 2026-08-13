@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - "docs/index.html"
+      - "docs/zh/**"
       - "docs/assets/**"
+      - "docs/robots.txt"
+      - "docs/sitemap.xml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
