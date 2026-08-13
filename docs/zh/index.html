@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN" class="zh-page">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151713">
+  <meta name="description" content="长脑子：让 Claude、Codex、Gemini、OpenCode 和 Cline 共用一份属于你的本地记忆。">
+  <meta property="og:title" content="长脑子 · 一个记忆，所有 Agent，你的文件">
+  <meta property="og:description" content="本地优先的 Agent Skill 与 MCP server。记忆写进你看得懂、拿得走的 Markdown。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://stancsz.github.io/second-brain/zh/">
+  <link rel="alternate" hreflang="en" href="https://stancsz.github.io/second-brain/">
+  <link rel="alternate" hreflang="zh-CN" href="https://stancsz.github.io/second-brain/zh/">
+  <link rel="alternate" hreflang="x-default" href="https://stancsz.github.io/second-brain/">
+  <title>长脑子 · 给 AI Agent 一份真正属于你的记忆</title>
+  <link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="长脑子首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>长脑子 <small>second-brain</small></span></a>
+    <nav aria-label="主导航"><a href="#proof">证据</a><a href="#compatibility">兼容</a><a href="#architecture">架构</a><a class="language-link" href="../" lang="en">EN</a><a href="https://github.com/stancsz/second-brain">GitHub</a></nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span>本地优先的 Agent 记忆</p>
+        <h1>给 Agent<br>长个脑子。<br><em>文件归你。</em></h1>
+        <p class="lede">让 Claude、Codex、Gemini、OpenCode 和 Cline 共用一份记忆。决定、上下文和长期知识写进你的 vault——不是某家产品的黑箱。</p>
+        <div class="hero-actions"><a class="button button-primary" href="#install">免费安装 · 从本地开始</a><a class="button button-secondary" href="https://github.com/stancsz/second-brain">看源代码</a></div>
+        <p class="fine-print">MIT · 核心只用 Python 标准库 · 不需要账号</p>
+      </div>
+      <div class="continuity-card" aria-label="跨 Agent 记忆示例">
+        <div class="card-topline"><span>记忆连续性证明</span><span class="live-pill">本地</span></div>
+        <div class="agent-turn"><span class="agent-label">CLAUDE</span><p>记住：Atlas 项目用 SQLite，因为 Markdown Bundle 才是事实来源。</p></div>
+        <div class="memory-write"><span class="write-icon" aria-hidden="true">↳</span><code>已保存 7c12a4e9。</code></div>
+        <div class="agent-turn second"><span class="agent-label">CODEX · 新会话</span><p>我们为什么给 Atlas 选 SQLite？</p></div>
+        <div class="memory-answer"><p>数据库只是可重建索引，Markdown 才是源头。</p><code>Concept 7c12a4e9</code></div>
+        <div class="data-route" aria-label="数据路径"><span>Agent</span><b>→</b><span>本地 CLI / MCP</span><b>→</b><span>你的 vault</span></div>
+      </div>
+    </section>
+
+    <section class="proof-strip" id="proof" aria-label="项目证据"><div><strong>262</strong><span>引擎与集成测试<br>已签入仓库</span></div><div><strong>0</strong><span>核心必需的 Python<br>第三方包</span></div><div><strong>2</strong><span>开放接口<br>Agent Skills + MCP</span></div><div><strong>100%</strong><span>用户拥有的<br>Markdown 正本</span></div></section>
+
+    <section class="section problem-section"><div class="section-kicker">旧默认，哪里坏了</div><div class="split-heading"><h2>Agent 会记住。<br><span>直到你换一个。</span></h2><p>上下文被锁在产品、会话和私有存储里。决定散了，下一个 Agent 重新失忆，导出永远排在最后。</p></div><div class="contrast-grid"><article class="contrast-card muted"><div class="card-index">01 / 租来的</div><h3>记忆即服务</h3><ul><li>只属于某个产品的上下文</li><li>看不懂的检索行为</li><li>价格与政策会漂移</li><li>以后再做迁移项目</li></ul></article><article class="contrast-card bright"><div class="card-index">02 / 自己的</div><h3>记忆即文件</h3><ul><li>一份可携带的 Agent Skill</li><li>能读、能 diff 的 Markdown</li><li>SQLite 随时删除、随时重建</li><li>用你的 Git 和存储账号</li></ul></article></div></section>
+
+    <section class="section install-section" id="install"><div class="section-kicker">一条命令，开始长脑子</div><div class="install-grid"><div><h2>同一份 Skill<br>装进五种 Agent。</h2><p>核心遵循开放的 Agent Skills <code>SKILL.md</code> 格式。主机适配是插头，不是记忆的分叉。</p></div><div class="terminal" aria-label="安装命令"><div class="terminal-bar"><i></i><i></i><i></i><span>terminal</span></div><pre><code id="install-command-zh">npx skills add stancsz/second-brain \
+  --skill second-brain --global --copy -y \
+  --agent claude-code codex gemini-cli opencode cline</code></pre><button class="copy-button" data-copy-target="install-command-zh">复制命令</button></div></div><p class="install-note">不想用 Node？把仓库复制到主机文档指定的 skills 目录。CLI 本身只需要 Python 和 SQLite。</p><p class="install-note">复制后运行 <code>python scripts/brain_doctor.py --json</code>，做一次只读、不暴露内容的安装与配对检查。</p></section>
+
+    <section class="section" id="compatibility"><div class="section-kicker">兼容性，不吹牛</div><div class="split-heading"><h2>一份标准核心。<br><span>五种诚实的差异。</span></h2><p>Agent Skills 和 MCP 协议可以跨主机。自动捕获与 prompt-time recall 目前主要由 Claude Code hooks 提供；其他主机可以先用 Skill 和 MCP。</p></div><div class="matrix-wrap" role="region" aria-label="Agent 兼容性矩阵" tabindex="0"><table><thead><tr><th>主机</th><th>Agent Skill</th><th>本地 MCP</th><th>自动 hooks</th><th>证据等级</th></tr></thead><tbody><tr><th>Claude Code</th><td><span class="tag built">已构建</span></td><td><span class="tag built">已构建</span></td><td><span class="tag built">Claude hooks</span></td><td>注册健康检查；握手待测</td></tr><tr><th>Codex</th><td><span class="tag standard">标准</span></td><td><span class="tag built">协议</span></td><td><span class="tag pending">待做</span></td><td>注册检查；握手待测</td></tr><tr><th>Gemini CLI</th><td><span class="tag standard">标准</span></td><td><span class="tag built">协议</span></td><td><span class="tag pending">待做</span></td><td>注册检查；握手待测</td></tr><tr><th>OpenCode</th><td><span class="tag standard">标准</span></td><td><span class="tag built">协议</span></td><td><span class="tag pending">待做</span></td><td>配置连接检查；握手待测</td></tr><tr><th>Cline</th><td><span class="tag standard">标准</span></td><td><span class="tag built">协议</span></td><td><span class="tag pending">待做</span></td><td>注册检查；握手待测</td></tr></tbody></table></div><p class="matrix-footnote">“标准”表示主机文档支持 Agent Skills，不代表每个版本都已通过本项目的真实握手。请看<a href="https://github.com/stancsz/second-brain/blob/main/docs/COMPATIBILITY.md">证据矩阵</a>。</p></section>
+
+    <section class="section architecture-section" id="architecture"><div class="section-kicker">架构</div><div class="split-heading"><h2>数据库只是缓存。<br><span>文件才是产品。</span></h2><p>这是护城河：每个索引和云端投影都可以扔掉。恢复从 Bundle 开始，不从供应商 API 开始。</p></div><div class="architecture-map"><div class="arch-node agents-node"><small>接口</small><strong>Agent Skills · MCP · CLI</strong></div><div class="arch-arrow" aria-hidden="true">↓</div><div class="arch-node core-node"><small>正本</small><strong>OKF Markdown Bundle</strong><span>人能读 · 能版本化 · 能带走</span></div><div class="arch-branches" aria-label="派生存储分支"><div><small>索引</small><strong>SQLite</strong><span>删掉再建</span></div><div><small>同步</small><strong>Git</strong><span>版本与冲突</span></div><div><small>镜像</small><strong>Snapshots</strong><span>对象存储适配器</span></div></div></div></section>
+
+    <section class="section status-section"><div class="section-kicker">今天已经能做什么</div><div class="status-grid"><article><span class="status-number">A</span><h3>本地知识图谱</h3><p>全文搜索、标签、集合、类型化链接、遍历、软删除和时间点回忆。</p></article><article><span class="status-number">B</span><h3>可携带的接口</h3><p>Agent Skills 包、无依赖 CLI，以及对同一份脑子的 stdio MCP server。</p></article><article><span class="status-number">C</span><h3>看得懂的 Markdown</h3><p>OKF frontmatter、wikilink、递归 vault 导入和手工关系重建。暂不声称原生 Obsidian 实时同步。</p></article><article><span class="status-number">D</span><h3>有心理结构的记忆</h3><p>主体、情绪、时间有效性和 supersession，都写在文件里，而不是私有的人格模型里。</p></article></div></section>
+
+    <section class="section beta-section"><div class="beta-card"><div><p class="eyebrow">开源 SaaS 方向</p><h2>记忆归你。<br>运维可以收费。</h2></div><div><p>格式、本地引擎、MCP、加密、Obsidian 路径和存储适配器保持开放。托管 / BYOC 服务可以收费于设备健康、备份、恢复演练、RBAC、审计、SSO 和支持。</p><div class="hero-actions"><a class="button button-primary" href="https://github.com/stancsz/second-brain/issues">一起设计</a><a class="button button-secondary" href="https://github.com/stancsz/second-brain/blob/main/docs/OPEN_SOURCE_SAAS.md">读路线图</a></div></div></div></section>
+  </main>
+  <footer><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>长脑子 <small>second-brain</small></span></div><p>MIT。你的知识是你的思想史。把文件留在自己手里。</p><div><a href="../" lang="en">English</a><a href="https://github.com/stancsz/second-brain">GitHub</a><a href="https://github.com/stancsz/second-brain/blob/main/README.zh.md">中文文档</a><a href="https://github.com/stancsz/second-brain/blob/main/LICENSE">License</a></div></footer>
+  <script src="../assets/site.js" defer></script>
+</body>
+</html>
