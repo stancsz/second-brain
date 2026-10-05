@@ -23,13 +23,20 @@ For copy-pasteable host paths and MCP configuration examples, see
 
 ## Agent hosts
 
-| Host | Native Agent Skill | MCP | Automatic capture and recall hooks |
+| Host | Native Agent Skill | MCP | Lifecycle hooks and task checkpoints |
 |---|---|---|---|
 | Claude Code | Package-validated; native install is documented. Live skill activation remains manual. | Repo-tested server; isolated `claude mcp add/list` health smoke on Claude Code 2.1.146, not CI. | Claude-specific installer and hooks have unit tests. A live installed-session test remains manual. |
-| Codex | Package-validated, including quoted `agents/openai.yaml` UI metadata and a `$second-brain` default prompt. Codex CLI `0.87.0` accepted an isolated MCP registration smoke. Fresh-session skill activation remains manual. | Repo-tested server; isolated `codex mcp add/get/list` registration smoke, not CI. | Not portable; no Codex lifecycle integration is shipped. |
+| Codex | Package-validated, including quoted `agents/openai.yaml` UI metadata and a `$second-brain` default prompt. Codex CLI `0.87.0` accepted an isolated MCP registration smoke. Fresh-session skill activation remains manual. | Repo-tested server; isolated `codex mcp add/get/list` registration smoke, not CI. | This repository now includes a project-local Stop/SubagentStop checkpoint hook and portable agent instructions. It requests a Second Brain task checkpoint; a live host handshake remains unverified. |
 | Gemini CLI | Documented target through the shared Agent Skills package; Gemini CLI `0.26.0` accepted an isolated MCP registration smoke. Fresh-session skill activation remains manual. | Repo-tested server; isolated `gemini mcp add/list` reported the server connected, not CI. | Not portable; no Gemini lifecycle integration is shipped. |
 | OpenCode | Documented target through the shared Agent Skills package. OpenCode `1.15.10` accepted an isolated local skill/MCP config smoke; fresh-session skill activation remains manual. | Repo-tested server; isolated `opencode mcp list --pure` reported the server connected, not CI. | Not portable; no OpenCode lifecycle integration is shipped. |
 | Cline | Documented target through the shared Agent Skills package; project/global skill paths are documented. Cline `3.0.51` parsed an isolated MCP registration; fresh-session skill activation remains manual. | Repo-tested server; isolated `cline config mcp --json` registration smoke, not CI. | Not portable; no Cline lifecycle integration is shipped. |
+
+The root `AGENTS.md` and `CLAUDE.md` ask compatible agents in this checkout to
+write a task checkpoint before finishing substantive work. A native Codex
+Stop/SubagentStop hook reinforces that rule here. Other hosts do not inherit a
+Codex hook; their checkpoint behavior depends on loading the project
+instructions or Second Brain skill. This is project-local guidance, not a
+claim of a universal cross-host Stop API.
 
 The MCP subprocess test covers `initialize`, `notifications/initialized`,
 `tools/list`, `brain_add`, and `brain_search` against a temporary home directory.

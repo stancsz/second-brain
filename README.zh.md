@@ -64,7 +64,7 @@ python scripts/brain_cli.py search "Why SQLite?"
 |---|---:|---:|---:|---:|---:|
 | Agent Skill 包 | 已验证 | 包已验证 | 文档化目标 | 文档化目标 | 文档化目标 |
 | 本地 stdio MCP 服务器 | 协议测试通过 | 协议测试通过 | 协议测试通过 | 协议测试通过 | 协议测试通过 |
-| 自动捕获/召回 hooks | 已测试 | — | — | — | — |
+| 生命周期 hooks / 任务进度记录 | 捕获/召回已测试 | 项目 Stop checkpoint；真实握手待验证 | — | — | — |
 
 “协议测试通过”表示仓库会启动 MCP 子进程，并在隔离的 home 目录中测试
 `initialize`、`tools/list`、`brain_add` 和 `brain_search`。这不表示已自动完成每个
@@ -80,6 +80,21 @@ bash install.sh
 
 安装器会合并设置，不会直接覆盖原设置。启用任何生命周期 hook 前请先审查；
 会话捕获涉及敏感数据。
+
+### 项目任务进度记录
+
+仓库中的 `AGENTS.md` 和 `CLAUDE.md` 要求 Agent 在结束实质性工作前，向
+Second Brain 保存或更新一条简短的 `Work` 记录，包含估计完成度、已完成事项、
+剩余工作或阻塞，以及验证情况。Agent 会先搜索同一任务；有明确匹配时更新原记录，
+否则新建记录。不会把原始对话 transcript 写进 Brain。
+
+Codex 还会读取项目配置 `.codex/hooks.json`。其中的 `Stop` 和 `SubagentStop`
+hook 会在结束前要求完成这条记录；Codex 首次提示时请审查并信任该项目 hook。
+其他宿主若读取项目指令，也会遵循进度记录约定；但各宿主没有统一的 Stop hook
+格式，因此不会自动继承 Codex 的生命周期 hook。
+
+各宿主的安装路径、MCP 配置和验证方式见[宿主设置](docs/HOST_SETUP.md)及
+[兼容性说明](docs/COMPATIBILITY.md)。
 
 ## 核心工作流
 

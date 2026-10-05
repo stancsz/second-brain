@@ -39,7 +39,30 @@ python /path/to/installed/second-brain/scripts/brain_cli.py \
 OpenCode explicitly searches the compatibility directories as well as its own
 project and global skill directories. Cline and Gemini have their own native
 paths, so copy the skill there when the shared installer does not materialize a
-host-specific directory. Do not copy the Claude lifecycle hooks to other hosts.
+host-specific directory. Lifecycle hooks are host-specific; do not copy a
+Claude hook configuration to another host.
+
+## Project task checkpoints
+
+When an agent works from this repository, `AGENTS.md` supplies the general
+task-checkpoint rule and `CLAUDE.md` supplies it to Claude Code. A substantive
+task checkpoint is a concise `Work` concept in Second Brain containing:
+
+- the task and an estimated completion percentage;
+- completed work;
+- remaining work or blockers;
+- verification performed and its result, or a note that verification was not run.
+
+Search for the same task before adding; update an existing concept when the
+match is clear. Use the installed skill's `scripts/brain_cli.py` or a connected
+Second Brain MCP server. Do not store raw transcripts.
+
+Codex additionally loads `.codex/hooks.json`, which registers
+`hooks/task_checkpoint.py` for `Stop` and `SubagentStop`. The hook asks Codex for
+one continuation to save the checkpoint (or mark the work as not applicable or
+the Brain as unavailable). Review and trust the hook when Codex asks. Other
+hosts rely on their project instruction/skill support; this repo does not claim
+a cross-host lifecycle hook.
 
 ## MCP configuration
 

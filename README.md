@@ -86,7 +86,7 @@ brain.
 |---|---:|---:|---:|---:|---:|
 | Agent Skill package | package-validated | package-validated | documented target + MCP registration smoke | documented target + MCP registration smoke | documented target + MCP registration smoke |
 | Local stdio MCP server | registration/health smoke on Claude Code 2.1.146 | registration smoke on Codex 0.87.0 | registration smoke on Gemini CLI 0.26.0 | registration smoke on OpenCode 1.15.10 | registration smoke on Cline 3.0.51 |
-| Automatic capture/recall hooks | tested | — | — | — | — |
+| Lifecycle hooks / task checkpoints | capture/recall tested | project Stop checkpoint; live handshake pending | — | — | — |
 
 “Subprocess protocol-tested” means the repository launches the MCP subprocess
 and exercises `initialize`, `tools/list`, `brain_add`, and `brain_search` in an
@@ -111,6 +111,24 @@ bash install.sh
 
 The installer merges settings instead of replacing them. Review any lifecycle
 hook before enabling it; conversation capture is sensitive data.
+
+### Project task checkpoints
+
+This repository includes `AGENTS.md` and `CLAUDE.md` instructions for saving a
+concise Second Brain `Work` concept before an agent finishes substantive work.
+The note records an estimated completion percentage, accomplishments,
+remaining work or blockers, and verification status. Agents search for the same
+task first and update its existing concept when there is a clear match. Raw
+transcripts are never copied into the Brain.
+
+Codex also reads the project hook configuration in `.codex/hooks.json`. Its
+`Stop` and `SubagentStop` hooks ask the agent to complete the checkpoint before
+finishing. Review and trust the project hook when Codex prompts. Other hosts
+follow the project instructions when they load them, but do not inherit a
+portable Stop hook; lifecycle hook APIs differ by host.
+
+For host paths, MCP setup, and verification details, see
+[Host setup](docs/HOST_SETUP.md) and [Compatibility](docs/COMPATIBILITY.md).
 
 ## Core workflow
 

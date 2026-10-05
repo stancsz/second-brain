@@ -71,6 +71,16 @@ test merely to make an implementation pass.
   attachment, alias, fragment, and path-resolution limits.
 - Re-read the diff, run `git diff --check`, and run the public release gate.
 
+## Second Brain task checkpoints
+
+Before ending substantive work in this repository, follow `AGENTS.md` and save
+or update a concise `Work` checkpoint in Second Brain with the estimated
+completion percentage, accomplishments, remaining work or blockers, and
+verification status. Apply this to partial work too, including subagent work.
+Do not checkpoint ordinary Q&A or save raw transcripts. If the brain is
+unavailable, report that plainly. End with the checkpoint marker required by
+`AGENTS.md` so the Codex Stop hook can verify the handoff.
+
 ## Positioning
 
 Lead with the repeated job: a developer switches among Claude, Codex, Gemini,

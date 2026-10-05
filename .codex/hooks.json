@@ -1,0 +1,31 @@
+{
+  "description": "Ask Codex to checkpoint substantive project work in Second Brain before stopping.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/hooks/task_checkpoint.py\"",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/hooks/task_checkpoint.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking the Second Brain task checkpoint"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/hooks/task_checkpoint.py\"",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/hooks/task_checkpoint.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking the Second Brain task checkpoint"
+          }
+        ]
+      }
+    ]
+  }
+}
