@@ -56,11 +56,18 @@ def available() -> bool:
 
 
 def generate_key(path: str | None = None) -> Path:
-    """Create a fresh Fernet key file (0600). Returns its path."""
+    """Create a fresh Fernet key file (0600), refusing to replace an existing key."""
     from cryptography.fernet import Fernet
     p = Path(path) if path else _key_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(Fernet.generate_key())
+    key = Fernet.generate_key()
+    try:
+        with p.open("xb") as handle:
+            handle.write(key)
+    except FileExistsError:
+        raise FileExistsError(
+            f"encryption key already exists at {p}; refusing to overwrite it"
+        ) from None
     try:
         os.chmod(p, 0o600)
     except OSError:
@@ -102,7 +109,11 @@ def decrypt(token: str) -> str:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 2 and sys.argv[1] == "init":
-        dest = generate_key(sys.argv[2] if len(sys.argv) > 2 else None)
+        try:
+            dest = generate_key(sys.argv[2] if len(sys.argv) > 2 else None)
+        except FileExistsError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(2)
         print(f"wrote encryption key: {dest}")
     else:
         print("usage: python scripts/crypto.py init [key_path]")
