@@ -26,7 +26,8 @@ vendor between you and your own history.
 `second-brain` takes the opposite approach:
 
 - **Files are truth.** Notes remain inspectable Markdown with stable IDs and
-  wikilinks.
+  wikilinks. Exported OKF Markdown uses LF line endings so synced Bundle diffs
+  stay stable across platforms.
 - **Agents are clients.** Claude, Codex, Gemini, OpenCode, and Cline share the
   same open skill package; MCP-capable clients can call the same brain over
   JSON-RPC. Host activation evidence is tracked explicitly below.
