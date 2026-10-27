@@ -28,6 +28,7 @@ machine output, for example: ``brain_cli.py --json search "query"``.
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -127,6 +128,7 @@ def main():
 
     u = sub.add_parser("update"); u.add_argument("id")
     u.add_argument("--title"); u.add_argument("--content"); u.add_argument("--tags"); u.add_argument("--collection")
+    u.add_argument("--content-file", help="read content from this UTF-8 file")
     u.add_argument("--subject", help='set sb_subject (pass "" to clear, back to /people/self.md)')
     u.add_argument("--affect", help='set sb_affect JSON (pass "" to clear)')
     u.add_argument("--valid-from", help='set sb_valid_from ISO date (pass "" to clear)')
@@ -204,6 +206,8 @@ def main():
 
     try:
         if args.cmd == "add":
+            if args.content is not None and args.content_file:
+                sys.exit("add accepts either positional content or --content-file, not both")
             if args.content_file:
                 content = Path(args.content_file).read_text(encoding="utf-8")
             else:
@@ -228,10 +232,34 @@ def main():
             out(dr, msg)
 
         elif args.cmd == "search":
-            res = b.search(args.query, args.collection, args.tag, args.limit)
-            human = f"ðŸ“š {len(res)} results\n\n" + _fmt_concept_lines(b, res) if res \
-                else "No results. Try broader terms or check the collection/tag filter."
-            out(res, human)
+            exact_id = b.con.execute(
+                "SELECT id FROM concepts WHERE id = ? AND deleted_at IS NULL",
+                (args.query,),
+            ).fetchone()
+            id_prefix = (re.fullmatch(r"[0-9a-fA-F]{8,}", args.query) is not None
+                         or exact_id is not None)
+            if exact_id or id_prefix:
+                rows = (b.con.execute(
+                    "SELECT id FROM concepts WHERE id LIKE ? AND deleted_at IS NULL ORDER BY id",
+                    (args.query + "%",),
+                ).fetchall() if id_prefix else [exact_id])
+                matches = [b.get(row[0]) for row in rows]
+                matches = [item for item in matches if item is not None]
+                if len(matches) > 1:
+                    human = (f"⚠️ {len(matches)} concepts match ID prefix '{args.query}':\n\n" +
+                             _fmt_concept_lines(b, matches) +
+                             "\n\nRe-run with one of the shown IDs to pick one.")
+                    res = matches
+                else:
+                    res = matches
+                    human = (f"📚 {len(res)} results\n\n" + _fmt_concept_lines(b, res)
+                             if res else "No results. Try broader terms or check the collection/tag filter.")
+                out(res, human)
+            else:
+                res = b.search(args.query, args.collection, args.tag, args.limit)
+                human = f"📚 {len(res)} results\n\n" + _fmt_concept_lines(b, res) if res \
+                    else "No results. Try broader terms or check the collection/tag filter."
+                out(res, human)
 
         elif args.cmd == "recall-subject":
             # Accept either a full path (/people/rox.md) or a display name
@@ -317,6 +345,10 @@ def main():
                 out(dd, human)
 
         elif args.cmd == "update":
+            if args.content is not None and args.content_file:
+                sys.exit("update accepts either --content or --content-file, not both")
+            content = (Path(args.content_file).read_text(encoding="utf-8")
+                       if args.content_file else args.content)
             tags = [x.strip() for x in args.tags.split(",")] if args.tags is not None else None
             kw = {}
             if args.subject is not None:
@@ -330,7 +362,7 @@ def main():
             if args.supersedes is not None:
                 kw["sb_supersedes"] = args.supersedes or None
             with canonical_mutation(b, args.bundle):
-                dr = b.update(args.id, args.title, args.content, tags, args.collection, **kw)
+                dr = b.update(args.id, args.title, content, tags, args.collection, **kw)
             out(dr, f"âœ… Updated {args.id[:8]}" if dr else f"No live concept {args.id[:8]}")
 
         elif args.cmd == "delete":
