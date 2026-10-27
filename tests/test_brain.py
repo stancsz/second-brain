@@ -341,8 +341,12 @@ class TestBrain(unittest.TestCase):
             self.assertEqual(note["content"], content)
         finally:
             stored.close()
-        exported = next((Path(self.tmpdir) / "brain.db.okf").rglob("*.md"))
-        self.assertTrue(exported.read_text(encoding="utf-8").endswith(content + "\n"))
+        exported = next(
+            path.read_text(encoding="utf-8")
+            for path in (Path(self.tmpdir) / "brain.db.okf").rglob("*.md")
+            if f"sb_id: {note['id']}" in path.read_text(encoding="utf-8")
+        )
+        self.assertTrue(exported.endswith(content + "\n"))
 
     def test_cli_update_content_file_and_conflict(self):
         note = self.b.add("Update file note", "old")
