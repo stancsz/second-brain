@@ -61,6 +61,16 @@ def _uuid() -> str:
     return uuid.uuid4().hex
 
 
+def _compile_fts_query(query: str) -> str:
+    """Compile plain user text into an OR of safely quoted FTS5 terms."""
+    terms = re.findall(r"[^\W_]+(?:['’][^\W_]+)*", query, flags=re.UNICODE)
+    terms = [
+        part for term in terms for part in re.split(r"[-‐‑‒–—]+", term)
+        if part and part.casefold() != "or"
+    ]
+    return " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+
+
 def _wikilink_target(raw: str) -> str:
     """Return the note-title portion of an Obsidian wikilink.
 
@@ -735,6 +745,9 @@ class SecondBrain:
         """
         params: list = []
         if query:
+            compiled_query = _compile_fts_query(query)
+            if not compiled_query:
+                return []
             sql = [
                 "SELECT c.* FROM concepts c",
                 "JOIN concepts_fts f ON f.rowid = c.rowid",
@@ -742,7 +755,7 @@ class SecondBrain:
                 "WHERE concepts_fts MATCH ?",
                 "AND c.deleted_at IS NULL",
             ]
-            params.append(query)
+            params.append(compiled_query)
         else:
             sql = [
                 "SELECT c.* FROM concepts c",
@@ -1000,13 +1013,16 @@ class SecondBrain:
     # -- search & list -------------------------------------------------------
 
     def search(self, query, collection=None, tag=None, limit=10):
+        compiled_query = _compile_fts_query(query)
+        if not compiled_query:
+            return []
         # Join FTS rowid back to concepts.rowid, then filter soft-deleted.
         sql = [
             "SELECT d.* FROM concepts_fts f",
             "JOIN concepts d ON d.rowid = f.rowid",
             "WHERE concepts_fts MATCH ? AND d.deleted_at IS NULL",
         ]
-        params = [query]
+        params = [compiled_query]
         if collection is not None:
             sql.append("AND d.collection = ?")
             params.append(collection)
@@ -1544,10 +1560,13 @@ class SecondBrain:
             clauses.append(f"{a}.collection = ?")
             params.append(collection)
         if query:
+            compiled_query = _compile_fts_query(query)
+            if not compiled_query:
+                return f"{a}.deleted_at IS NULL AND 0", []
             clauses.append(
                 f"{a}.rowid IN (SELECT rowid FROM concepts_fts WHERE concepts_fts MATCH ?)"
             )
-            params.append(query)
+            params.append(compiled_query)
         if since:
             clauses.append(f"{a}.updated_at >= ?")
             params.append(since)

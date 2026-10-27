@@ -369,6 +369,34 @@ class TestBrain(unittest.TestCase):
         # Soft-deleted row must be absent from FTS join (deleted_at IS NULL filter).
         self.assertNotIn(target["id"], ids)
 
+    def test_plain_text_fts_queries_handle_punctuation(self):
+        why = self.b.add("Why SQLite?", "SQLite keeps local data searchable")
+        canonical = self.b.add("Canonical format", "what's canonical here")
+        hyphenated = self.b.add("Foo-bar", "hyphenated phrase")
+        connective = self.b.add("Conjunction", "or")
+
+        for query, expected in (("Why SQLite?", why), ("what's canonical", canonical),
+                                ("foo-bar", hyphenated)):
+            with self.subTest(query=query):
+                self.assertIn(expected["id"], {x["id"] for x in self.b.search(query)})
+        self.assertEqual(self.b.search("!!!"), [])
+        self.assertNotIn(connective["id"], {x["id"] for x in self.b.search("Why SQLite? OR")})
+        self.assertEqual(self.b.recall_as_of("2099-01-01", "Why SQLite?")[0]["id"], why["id"])
+        self.assertEqual(self.b.recall_as_of("2099-01-01", "!!!"), [])
+
+    def test_distill_query_treats_input_as_plain_text(self):
+        self.b.add("Why SQLite?", "what's canonical")
+        output = Path(self.tmpdir) / "distilled.db"
+        self.assertEqual(self.b.distill(output, query="what's canonical")["concepts"], 1)
+        distilled = SecondBrain(output)
+        try:
+            self.assertEqual([x["title"] for x in distilled.list()], ["Why SQLite?"])
+        finally:
+            distilled.close()
+        self.assertEqual(
+            self.b.distill(Path(self.tmpdir) / "empty.db", query="!!!")["concepts"], 0
+        )
+
     def test_soft_delete_hidden_from_list(self):
         dr = self.b.add("SoftListed", "some text")
         self.b.delete(dr["id"])
