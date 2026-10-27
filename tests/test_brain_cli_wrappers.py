@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,41 @@ class TestBrainCLIWrappers(unittest.TestCase):
     def run_cli(self, *args, env=None):
         return subprocess.run([sys.executable, str(CLI), *map(str, args)],
                               text=True, capture_output=True, env=env)
+
+    def test_empty_stats_and_summary_offer_first_capture_only_in_human_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "brain.db"
+            env = dict(os.environ, SECONDBRAIN_DB=str(db))
+            guidance = ('brain add "Project idea" "What I want to remember"',
+                        'brain search "Project idea"')
+            for command in ("stats", "summary"):
+                result = self.run_cli("--db", db, command, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for phrase in guidance:
+                    self.assertIn(phrase, result.stdout)
+                machine = self.run_cli("--db", db, "--json", command, env=env)
+                self.assertEqual(machine.returncode, 0, machine.stderr)
+                parsed = json.loads(machine.stdout)
+                self.assertIsInstance(parsed, dict)
+                self.assertNotIn("Get started", machine.stdout)
+
+            added = self.run_cli("--db", db, "add", "Existing", "Some durable note", env=env)
+            self.assertEqual(added.returncode, 0, added.stderr)
+            for command in ("stats", "summary"):
+                result = self.run_cli("--db", db, command, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Get started", result.stdout)
+
+    def test_installer_prints_quoted_portable_first_capture_and_recall(self):
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn(' add "First memory" "Something worth remembering"\\n\'', installer)
+        self.assertIn(' search "First memory"\\n\'', installer)
+        self.assertIn('REPO_DIR="$(cd "$(dirname "$0")" && pwd)"', installer)
+        self.assertIn('BRAIN_CLI_PATH="$REPO_DIR/scripts/brain_cli.py"', installer)
+        capture_examples = installer[installer.index("Copy/paste these commands"):]
+        self.assertNotIn("from any shell", installer)
+        self.assertIn('python3 "%s"', capture_examples)
+        self.assertIn('"$BRAIN_CLI_PATH"', capture_examples)
 
     def test_help_lists_wrappers(self):
         result = self.run_cli("--help")

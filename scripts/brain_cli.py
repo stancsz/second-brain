@@ -495,6 +495,11 @@ def main():
                      f"Pending links: {s['pending_links']}\n"
                      f"Top tags: {top_tags}\n"
                      f"Collections: {colls}")
+            if s["concepts"] == 0:
+                human += (
+                    '\n\nGet started: brain add "Project idea" "What I want to remember"'
+                    '\nThen find it: brain search "Project idea".'
+                )
             out(s, human)
 
         elif args.cmd == "summary":
@@ -527,6 +532,11 @@ def main():
                 f"({', '.join(f'{k}Ã—{v}' for k, v in rels.items()) or 'none'})\n"
                 f"  Pending:  {s['pending_links']:,} unresolved wikilinks"
             ) + "\n".join(rec_lines)
+            if d["alive"] == 0:
+                human += (
+                    '\n\nGet started: brain add "Project idea" "What I want to remember"'
+                    '\nThen find it: brain search "Project idea".'
+                )
             out(s, human)
 
         elif args.cmd == "distill":
