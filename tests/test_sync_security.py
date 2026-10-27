@@ -49,7 +49,7 @@ class TestBundleSecretHygiene(unittest.TestCase):
             self.assertNotIn("secret.key", staged)
             self.assertNotIn("brain.db", staged)
 
-    def test_strict_encryption_refuses_before_bundle_repo_creation(self):
+    def test_strict_encryption_refusal_preserves_git_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / "brain.db"
@@ -57,6 +57,29 @@ class TestBundleSecretHygiene(unittest.TestCase):
             brain = SecondBrain(db)
             brain.add("Private decision", "sensitive", tags=["private"])
             brain.close()
+
+            bundle_dir.mkdir()
+            subprocess.run(["git", "init"], cwd=bundle_dir,
+                           check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"],
+                           cwd=bundle_dir, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"],
+                           cwd=bundle_dir, check=True)
+            (bundle_dir / "tracked.md").write_text("committed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.md"], cwd=bundle_dir, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=bundle_dir,
+                           check=True, capture_output=True, text=True)
+            (bundle_dir / "tracked.md").write_text("staged\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.md"], cwd=bundle_dir, check=True)
+            (bundle_dir / "tracked.md").write_text("working tree\n", encoding="utf-8")
+            head_before = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=bundle_dir, check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            status_before = subprocess.run(
+                ["git", "status", "--porcelain"], cwd=bundle_dir, check=True,
+                capture_output=True, text=True,
+            ).stdout
 
             with mock.patch.dict(
                 os.environ, {"SECONDBRAIN_REQUIRE_ENCRYPTION": "1"}, clear=False
@@ -66,7 +89,15 @@ class TestBundleSecretHygiene(unittest.TestCase):
                 ):
                     sync.sync(db, bundle_dir)
 
-            self.assertFalse(bundle_dir.exists())
+            self.assertEqual(head_before, subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=bundle_dir, check=True,
+                capture_output=True, text=True,
+            ).stdout.strip())
+            self.assertEqual(status_before, subprocess.run(
+                ["git", "status", "--porcelain"], cwd=bundle_dir, check=True,
+                capture_output=True, text=True,
+            ).stdout)
+            self.assertFalse(sync._rebase_in_progress(bundle_dir))
 
     def test_non_strict_sync_surfaces_plaintext_private_count(self):
         with tempfile.TemporaryDirectory() as tmp:
