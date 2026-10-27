@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,8 @@ from store import (
     canonical_replacement_guard,
     open_brain,
     recover_if_dirty,
+    resolve_bundle_path,
+    resolve_db_path,
     replace_canonical,
 )
 
@@ -93,6 +96,22 @@ def main():
     p.add_argument("--bundle", default=None, help="canonical OKF Bundle (default: SECONDBRAIN_BUNDLE, ~/.secondbrain/okf, or a custom-db sibling)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    sync_parser = sub.add_parser("sync", help="synchronize the OKF Bundle with Git")
+    sync_parser.add_argument("--remote", help="Git remote URL")
+    backup_parser = sub.add_parser("backup", help="push a verified immutable Bundle snapshot")
+    backup_parser.add_argument("--backend", choices=("local", "rclone", "postgres"), required=True)
+    backup_parser.add_argument("--bundle", required=True, help="OKF Bundle directory")
+    backup_parser.add_argument("--store")
+    backup_parser.add_argument("--remote")
+    backup_parser.add_argument("--rclone")
+    backup_parser.add_argument("--dsn-env")
+    backup_parser.add_argument("--table")
+    backup_parser.add_argument("--allow-plaintext-private", action="store_true")
+    key_parser = sub.add_parser("key", help="manage encryption key")
+    key_sub = key_parser.add_subparsers(dest="key_command", required=True)
+    key_sub.add_parser("init", help="create an encryption key")
+    key_sub.add_parser("status", help="show encryption readiness")
 
     a = sub.add_parser("add"); a.add_argument("title"); a.add_argument("content", nargs="?")
     a.add_argument("--content-file", help="read content from this file (avoids shell escaping for long content)")
@@ -194,6 +213,35 @@ def main():
                     help="path to a brain.db whose concepts will be merged into the working brain")
 
     args = p.parse_args()
+    if args.cmd == "sync":
+        db_path = resolve_db_path(args.db)
+        bundle_path = resolve_bundle_path(db_path, args.bundle)
+        command = [sys.executable, str(Path(__file__).with_name("sync.py")),
+                   str(bundle_path)]
+        command.extend([args.remote or "", db_path])
+        return subprocess.run(command).returncode
+    if args.cmd == "backup":
+        command = [sys.executable, str(Path(__file__).with_name("storage_cli.py")), "push",
+                   "--backend", args.backend, "--bundle", args.bundle]
+        for option in ("store", "remote", "rclone", "dsn_env", "table"):
+            value = getattr(args, option)
+            if value is not None:
+                command.extend(["--" + option.replace("_", "-"), value])
+        if args.allow_plaintext_private:
+            command.append("--allow-plaintext-private")
+        return subprocess.run(command).returncode
+    if args.cmd == "key":
+        crypto = Path(__file__).with_name("crypto.py")
+        if args.key_command == "init":
+            return subprocess.run([sys.executable, str(crypto), "init"]).returncode
+        import crypto as crypto_module
+        backend = "cryptography.fernet" if crypto_module.backend_available() else "unavailable"
+        print(f"backend={backend}")
+        print(f"key_present={str(crypto_module.key_available()).lower()}")
+        strict = os.environ.get("SECONDBRAIN_REQUIRE_ENCRYPTION", "").lower() in ("1", "true", "yes", "on")
+        print(f"strict_mode={str(strict).lower()}")
+        return 0
+
     b = open_brain(args.db, args.bundle)
 
     recover_if_dirty(b, args.bundle)
@@ -634,5 +682,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 

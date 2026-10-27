@@ -35,6 +35,13 @@ class TestCrypto(unittest.TestCase):
         os.environ["SECONDBRAIN_KEY_FILE"] = str(Path(self.tmp.name) / "absent.key")
         self.assertFalse(crypto.available())
 
+    def test_generate_key_refuses_to_replace_existing_key(self):
+        existing = Path(self.tmp.name) / "existing.key"
+        existing.write_bytes(b"preserve this key")
+        with self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
+            crypto.generate_key(str(existing))
+        self.assertEqual(existing.read_bytes(), b"preserve this key")
+
     def test_is_private_classification(self):
         self.assertTrue(crypto.is_private({"tags": ["private"], "type": "Note"}))
         self.assertTrue(crypto.is_private({"tags": ["psych"], "type": "Note"}))

@@ -242,6 +242,7 @@ cross-device attachment sync protocol.
 The OKF Bundle is the bidirectional synchronization spine:
 
 ```bash
+python scripts/brain_cli.py sync [--remote <git-remote>]
 python scripts/sync.py ~/.secondbrain/okf <git-remote> ~/.secondbrain/brain.db
 ```
 
@@ -260,11 +261,22 @@ one-way mirrors, not a concurrent-edit protocol.
 Local reference backend:
 
 ```bash
+python scripts/brain_cli.py backup --backend local --store ./backups \
+  --bundle ~/.secondbrain/okf
 python scripts/storage_cli.py push --backend local \
   --store ./backups --bundle ~/.secondbrain/okf
 python scripts/storage_cli.py pull --backend local \
   --store ./backups --dest ./restored-okf
 python scripts/bundle.py rebuild ./restored-okf ./restored-brain.db
+```
+
+Manage the optional encryption key through the main CLI:
+
+`key init` refuses to overwrite an existing key file.
+
+```bash
+python scripts/brain_cli.py key status
+python scripts/brain_cli.py key init
 ```
 
 For a restored brain that should become a normal paired working store, open it
