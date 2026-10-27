@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from brain import SecondBrain
 import bundle
+import store
 
 
 class TestBrain(unittest.TestCase):
@@ -310,6 +311,79 @@ class TestBrain(unittest.TestCase):
         self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
         self.assertIn("# CLI collision one", resolved.stdout)
         self.assertNotIn("concepts match", resolved.stdout)
+
+    def _run_cli(self, *arguments):
+        cli = Path(__file__).parent.parent / "scripts" / "brain_cli.py"
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["SECONDBRAIN_BUNDLE"] = str(Path(self.tmpdir) / "brain.db.okf")
+        return subprocess.run(
+            [sys.executable, str(cli), "--db", str(Path(self.tmpdir) / "brain.db"),
+             *map(str, arguments)],
+            cwd=Path(__file__).parent.parent, capture_output=True, text=True,
+            encoding="utf-8", env=env, check=False,
+        )
+
+    def _prepare_cli_bundle(self):
+        self.b.close()
+
+    def test_cli_add_content_file_preserves_utf8_and_trailing_newline(self):
+        content = "line one\ncafé 中文\n"
+        source = Path(self.tmpdir) / "content.txt"
+        source.write_text(content, encoding="utf-8", newline="")
+        self._prepare_cli_bundle()
+
+        result = self._run_cli("add", "File note", "--content-file", source)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        stored = SecondBrain(Path(self.tmpdir) / "brain.db")
+        try:
+            note = stored.get_by_title("File note")[0]
+            self.assertEqual(note["content"], content)
+        finally:
+            stored.close()
+        exported = next((Path(self.tmpdir) / "brain.db.okf").rglob("*.md"))
+        self.assertTrue(exported.read_text(encoding="utf-8").endswith(content + "\n"))
+
+    def test_cli_update_content_file_and_conflict(self):
+        note = self.b.add("Update file note", "old")
+        content = "updated café\nsecond line"
+        source = Path(self.tmpdir) / "update.txt"
+        source.write_text(content, encoding="utf-8", newline="")
+        self._prepare_cli_bundle()
+
+        result = self._run_cli("update", note["id"], "--content-file", source)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        stored = SecondBrain(Path(self.tmpdir) / "brain.db")
+        try:
+            self.assertEqual(stored.get(note["id"])["content"], content)
+        finally:
+            stored.close()
+
+        conflict = self._run_cli("update", note["id"], "--content", "inline",
+                                 "--content-file", source)
+        self.assertNotEqual(conflict.returncode, 0)
+        self.assertIn("either --content or --content-file", conflict.stderr)
+
+    def test_cli_search_by_id_and_prefix_and_ambiguity_preserves_text_search(self):
+        first = self._insert_fixed_concept("deadbeef0" + "0" * 23,
+                                           "First ID target", "ordinary needle")
+        second = self._insert_fixed_concept("deadbeef0" + "1" * 23,
+                                            "Second ID target", "ordinary needle")
+        self._prepare_cli_bundle()
+
+        full = self._run_cli("--json", "search", first["id"])
+        prefix = self._run_cli("--json", "search", first["id"][:9])
+        ambiguous = self._run_cli("search", "deadbeef0")
+        text = self._run_cli("--json", "search", "ordinary needle")
+        self.assertEqual(full.returncode, 0, full.stderr)
+        self.assertEqual(prefix.returncode, 0, prefix.stderr)
+        self.assertEqual(json.loads(full.stdout)[0]["id"], first["id"])
+        self.assertEqual(json.loads(prefix.stdout)[0]["id"], first["id"])
+        self.assertIn(first["id"][:8], ambiguous.stdout)
+        self.assertIn(second["id"][:8], ambiguous.stdout)
+        self.assertIn("Re-run with one of the shown IDs", ambiguous.stdout)
+        self.assertEqual({row["id"] for row in json.loads(text.stdout)},
+                         {first["id"], second["id"]})
 
     # -----------------------------------------------------------------------
     # 2. FTS triggers: update — old content gone, new content findable
@@ -1536,6 +1610,31 @@ class TestBrain(unittest.TestCase):
         )
         self.assertEqual(parsed["sb_id"], "crlf-id")
         self.assertEqual(parsed["body"], "Body\nline")
+
+    def test_okf_body_trailing_newlines_round_trip(self):
+        import okf
+
+        for endings in (0, 1, 3):
+            with self.subTest(trailing_newlines=endings):
+                concept = {"sb_id": "newline-test", "type": "Note",
+                           "title": "Newline test", "body": "content" + "\n" * endings}
+                markdown = okf.to_markdown(concept)
+                self.assertTrue(markdown.endswith("\n"))
+                self.assertEqual(okf.from_markdown(markdown)["body"], concept["body"])
+
+    def test_okf_citation_section_preserves_body_trailing_newlines(self):
+        import okf
+
+        for endings in (0, 1, 3):
+            with self.subTest(trailing_newlines=endings):
+                concept = {"sb_id": "citation-newline-test", "type": "Note",
+                           "title": "Citation newline test",
+                           "body": "content" + "\n" * endings,
+                           "sources": ["https://example.com"]}
+                markdown = okf.to_markdown(concept)
+                parsed = okf.from_markdown(markdown)
+                self.assertEqual(parsed["body"], concept["body"])
+                self.assertEqual(parsed["sources"], concept["sources"])
 
     def test_restore_plain_note_no_spurious_psych_rows(self):
         plain = self.b.add("Plain", "no psych dims")

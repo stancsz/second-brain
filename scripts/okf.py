@@ -130,12 +130,16 @@ def to_markdown(concept: dict) -> str:
     lines.append("---")
 
     body = concept.get("body") or ""
-    text = "\n".join(lines) + "\n\n" + body.rstrip("\n")
+    text = "\n".join(lines) + "\n\n" + body
 
     if sources:
         cites = "\n".join(f"[{i}] {u}" for i, u in enumerate(sources, 1))
-        text = text.rstrip("\n") + "\n\n# Citations\n\n" + cites
-    return text.rstrip("\n") + "\n"
+        # Keep the body bytes separate from the structural blank line. This
+        # matters when the body itself ends in one or more newlines.
+        return text + "\n\n# Citations\n\n" + cites + "\n"
+    # The final newline terminates the Markdown document; the parser removes
+    # this one newline, preserving any terminal newlines in the body above.
+    return text + "\n"
 
 
 # -- parse -----------------------------------------------------------------
@@ -189,7 +193,17 @@ def from_markdown(text: str, path: str | None = None) -> dict:
         if cite_lines and all(_CITATION_RE.match(ln) for ln in cite_lines):
             body = body_part
             sources = [_CITATION_RE.match(ln).group(1).strip() for ln in cite_lines]
-    body = body.strip("\n")
+    # The document terminator is one conventional final newline. Any preceding
+    # newlines belong to the concept body and must survive the round trip.
+    # Citation sections are separated from the body by a blank line. Remove
+    # exactly that separator; any additional newlines belong to the body.
+    if sources:
+        if body.endswith("\n\n"):
+            body = body[:-2]
+    # Without citations, remove the document's conventional final newline, not
+    # all body newlines. With citations, the final newline terminates citations.
+    elif body.endswith("\n"):
+        body = body[:-1]
 
     # collection from the path (OKF directory idiom), else None.
     collection = None
