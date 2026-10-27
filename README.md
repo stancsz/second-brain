@@ -78,6 +78,12 @@ python scripts/brain_cli.py add "Atlas storage decision" \
 python scripts/brain_cli.py search "Why SQLite?"
 ```
 
+Install the Python CLI from a checkout or package index with `pip install .`;
+this installs the `brain` command and has no third-party runtime dependencies.
+To enable encryption, install the optional extra with `pip install '.[encryption]'`
+(or `pip install 'second-brain-cli[encryption]'` after publication). The extra
+installs the optional `cryptography` Fernet backend.
+
 Data is created under `~/.secondbrain/`. Use `--db PATH` to isolate a different
 brain.
 
