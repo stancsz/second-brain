@@ -62,10 +62,13 @@ def _uuid() -> str:
 
 
 def _compile_fts_query(query: str) -> str:
-    """Compile plain user text into an AND of safely quoted FTS5 terms."""
+    """Compile plain user text into an OR of safely quoted FTS5 terms."""
     terms = re.findall(r"[^\W_]+(?:['’][^\W_]+)*", query, flags=re.UNICODE)
-    terms = [part for term in terms for part in re.split(r"[-‐‑‒–—]+", term) if part]
-    return " AND ".join('"' + term.replace('"', '""') + '"' for term in terms)
+    terms = [
+        part for term in terms for part in re.split(r"[-‐‑‒–—]+", term)
+        if part and part.casefold() != "or"
+    ]
+    return " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
 
 
 def _wikilink_target(raw: str) -> str:
