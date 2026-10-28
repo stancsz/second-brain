@@ -1518,13 +1518,15 @@ class TestBrain(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             b1 = SecondBrain(tmp / "b1.db")
-            dr = b1.add("Mem", "body", sb_subject="/people/alex.md",
-                        sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9},
-                        sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
-            cid = dr["id"]
-            b1.delete(cid)
-            bundle.export(b1, str(tmp / "okf"))
-            b1.close()
+            try:
+                dr = b1.add("Mem", "body", sb_subject="/people/alex.md",
+                            sb_affect={"emotion": "grief", "valence": -0.8, "intensity": 0.9},
+                            sb_valid_from="2020-01-01", sb_valid_to="2023-01-01")
+                cid = dr["id"]
+                b1.delete(cid)
+                bundle.export(b1, str(tmp / "okf"))
+            finally:
+                b1.close()
             b2 = bundle.rebuild(str(tmp / "okf"), str(tmp / "b2.db"))
             try:
                 # bug precondition: psych rows dropped by rebuild

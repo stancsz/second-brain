@@ -222,6 +222,7 @@ class TestCanonicalCli(CanonicalStoreCase):
         database = self.root / "wipe.db"
         canonical = self.root / "wipe-vault"
         first = SecondBrain(database)
+        self.addCleanup(first.close)
         with store.canonical_mutation(first, canonical):
             saved = first.add("Survives wipe", "bundle-first recovery")
         first.close()
@@ -240,9 +241,11 @@ class TestCanonicalCli(CanonicalStoreCase):
         database = self.root / "ambiguous.db"
         canonical = self.root / "ambiguous-vault"
         brain = SecondBrain(database)
+        self.addCleanup(brain.close)
         brain.add("Database fact", "database")
         brain.close()
         other = SecondBrain(self.root / "other.db")
+        self.addCleanup(other.close)
         other.add("Bundle fact", "bundle")
         bundle.export(other, canonical)
         other.close()
@@ -254,6 +257,7 @@ class TestCanonicalCli(CanonicalStoreCase):
         database = self.root / "drift.db"
         canonical = self.root / "drift-vault"
         brain = SecondBrain(database)
+        self.addCleanup(brain.close)
         with store.canonical_mutation(brain, canonical):
             brain.add("Paired", "first")
         brain.add("Bypassed coordinator", "second")
@@ -266,6 +270,7 @@ class TestCanonicalCli(CanonicalStoreCase):
         database = self.root / "edited.db"
         canonical = self.root / "edited-vault"
         brain = SecondBrain(database)
+        self.addCleanup(brain.close)
         with store.canonical_mutation(brain, canonical):
             brain.add("Original", "before")
         brain.close()
@@ -279,6 +284,7 @@ class TestCanonicalCli(CanonicalStoreCase):
         database = self.root / "schema.db"
         canonical = self.root / "schema-vault"
         brain = SecondBrain(database)
+        self.addCleanup(brain.close)
         with store.canonical_mutation(brain, canonical):
             brain.add("Original", "value")
         brain.close()

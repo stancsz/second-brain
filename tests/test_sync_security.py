@@ -1,4 +1,5 @@
 import os
+from contextlib import ExitStack
 import subprocess
 import sys
 import tempfile
@@ -50,11 +51,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
             self.assertNotIn("brain.db", staged)
 
     def test_strict_encryption_refusal_preserves_git_state(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Private decision", "sensitive", tags=["private"])
             brain.close()
 
@@ -100,11 +102,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
             self.assertFalse(sync._rebase_in_progress(bundle_dir))
 
     def test_non_strict_sync_surfaces_plaintext_private_count(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Private decision", "sensitive", tags=["private"])
             brain.close()
 
@@ -116,11 +119,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
             self.assertEqual(result["plaintext_private"], 1)
 
     def test_sync_pairs_rebuilt_database_and_next_open(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Base", "local canonical fact")
             brain.close()
 
@@ -133,11 +137,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
                 reopened.close()
 
     def test_manual_bundle_edit_is_not_overwritten_by_sync(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Base", "original")
             brain.close()
             sync.sync(db, bundle_dir)
@@ -150,11 +155,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
             self.assertIn("external edit", note.read_text(encoding="utf-8"))
 
     def test_interrupted_sync_rebuilds_bundle_without_exporting_stale_db(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Base", "base")
             brain.close()
             sync.sync(db, bundle_dir)
@@ -178,11 +184,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
                 reopened.close()
 
     def test_open_recovers_sync_marker_from_bundle_authority(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Base", "base")
             brain.close()
             sync.sync(db, bundle_dir)
@@ -197,11 +204,12 @@ class TestBundleSecretHygiene(unittest.TestCase):
 
     def test_sync_retries_bundle_authority_after_rebuild_failure(self):
         """A failed post-pull rebuild must not let the next retry export stale DB."""
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db = root / "brain.db"
             bundle_dir = root / "bundle"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             brain.add("Base", "base")
             brain.close()
             sync.sync(db, bundle_dir)
