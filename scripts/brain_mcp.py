@@ -152,6 +152,22 @@ TOOLS = [
         },
     },
     {
+        "name": "brain_recall_affect",
+        "description": "Recall memories by structured affect filters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "emotion": {"type": "string"},
+                "min_valence": {"type": "number"},
+                "max_valence": {"type": "number"},
+                "min_arousal": {"type": "number"},
+                "max_arousal": {"type": "number"},
+                "min_intensity": {"type": "number"},
+                "limit": {"type": "integer", "default": 50},
+            },
+        },
+    },
+    {
         "name": "brain_stats",
         "description": "Brain health: concept/relation counts, top tags, collections.",
         "inputSchema": {
@@ -226,6 +242,15 @@ def _h_recall_as_of(b, a):
     return json.dumps({"as_of": a["as_of"], "concepts": res}, ensure_ascii=False, default=str)
 
 
+def _h_recall_affect(b, a):
+    filters = {key: a[key] for key in (
+        "emotion", "min_valence", "max_valence", "min_arousal",
+        "max_arousal", "min_intensity",
+    ) if key in a}
+    res = b.recall_by_affect(**filters, limit=a.get("limit", 50))
+    return json.dumps({"filters": filters, "concepts": res}, ensure_ascii=False, default=str)
+
+
 def _h_stats(b, a):
     return json.dumps(b.stats(a.get("collection")), ensure_ascii=False, default=str)
 
@@ -238,6 +263,7 @@ HANDLERS = {
     "brain_related": _h_related,
     "brain_recall_subject": _h_recall_subject,
     "brain_recall_as_of": _h_recall_as_of,
+    "brain_recall_affect": _h_recall_affect,
     "brain_stats": _h_stats,
 }
 
