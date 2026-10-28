@@ -6,6 +6,7 @@ block a prompt (always exit 0), must turn arbitrary prose into a safe FTS
 query, and must never surface raw conversation transcripts.
 """
 import json
+from contextlib import ExitStack
 import os
 import subprocess
 import sys
@@ -54,13 +55,13 @@ class TestBuildFtsQuery(unittest.TestCase):
 
     def test_resulting_query_is_valid_fts(self):
         # The produced query must actually run against FTS5 without error.
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, ExitStack() as cleanup:
             b = SecondBrain(Path(td) / "b.db")
+            cleanup.callback(b.close)
             b.add("Checkout timeout", "raised gateway timeout to 30s")
             q = recall._build_fts_query("why is checkout timing out?? (urgent)")
             hits = b.search(q, limit=5)  # must not raise
             self.assertTrue(any("Checkout" in h["title"] for h in hits))
-            b.close()
 
 
 class TestRecall(unittest.TestCase):
@@ -68,6 +69,7 @@ class TestRecall(unittest.TestCase):
         self.td = tempfile.mkdtemp()
         self.db = str(Path(self.td) / "brain.db")
         b = SecondBrain(self.db)
+        self.addCleanup(b.close)
         b.add("Checkout service timeout fix",
               "raised API gateway timeout to 30s after the incident",
               collection="Engineering", tags=["checkout", "incident"])
@@ -123,6 +125,31 @@ class TestHookNeverBlocks(unittest.TestCase):
     def test_empty_stdin(self):
         self.assertEqual(self._run("").returncode, 0)
 
+    def test_failing_verifier_preserves_assertion_without_temp_cleanup_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            marker = "UNIQUE_VERIFIER_REPLACE_FAILURE_13"
+            script = (
+                "import sys, unittest\n"
+                "from unittest.mock import patch\n"
+                f"sys.path.insert(0, {str(SCRIPTS_DIR)!r})\n"
+                f"sys.path.insert(0, {str(Path(__file__).parent)!r})\n"
+                "import test_doctor\n"
+                "suite = unittest.TestSuite([test_doctor.TestDoctor('test_paired_report_uses_read_only_projection')])\n"
+                f"with patch.object(test_doctor.store, 'replace_canonical', side_effect=AssertionError({marker!r})):\n"
+                "    result = unittest.TextTestRunner().run(suite)\n"
+                "    raise SystemExit(0 if result.wasSuccessful() else 1)\n"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", script], capture_output=True, text=True,
+                cwd=Path(__file__).resolve().parents[1], timeout=30,
+            )
+            combined = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn(f"AssertionError: {marker}", combined)
+            self.assertNotIn("PermissionError", combined)
+            self.assertNotIn("WinError 32", combined)
+            self.assertNotIn("Exception ignored in", combined)
+
     def test_garbage_stdin(self):
         self.assertEqual(self._run("}{not json").returncode, 0)
 
@@ -130,18 +157,22 @@ class TestHookNeverBlocks(unittest.TestCase):
         self.assertEqual(self._run('{"hook_event_name":"UserPromptSubmit"}').returncode, 0)
 
     def test_skip_switch_silences_output(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, ExitStack() as cleanup:
             db = str(Path(td) / "b.db")
-            b = SecondBrain(db); b.add("Checkout timeout", "gateway 30s"); b.close()
+            b = SecondBrain(db)
+            cleanup.callback(b.close)
+            b.add("Checkout timeout", "gateway 30s")
+            b.close()
             proc = self._run('{"prompt":"checkout timeout"}',
                              {"SECONDBRAIN_DB": db, "SECONDBRAIN_SKIP_RECALL": "1"})
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(proc.stdout.strip(), "")
 
     def test_relevant_prompt_injects_context(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, ExitStack() as cleanup:
             db = str(Path(td) / "b.db")
             b = SecondBrain(db)
+            cleanup.callback(b.close)
             b.add("Checkout timeout fix", "raised gateway timeout to 30s",
                   collection="Engineering")
             b.close()

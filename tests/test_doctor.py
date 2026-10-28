@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 import subprocess
 import sys
 import tempfile
@@ -41,10 +42,11 @@ class TestDoctor(unittest.TestCase):
             self.assertNotIn("content", result.stdout.lower())
 
     def test_paired_report_uses_read_only_projection(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db, vault = root / "brain.db", root / "vault"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             store.replace_canonical(brain, vault)
             brain.add("Doctor canary", "private content must not be reported")
             brain.close()
@@ -60,10 +62,11 @@ class TestDoctor(unittest.TestCase):
             self.assertNotIn("private content", result.stdout)
 
     def test_paired_report_passes_after_canonical_mutation(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
             root = Path(tmp)
             db, vault = root / "brain.db", root / "vault"
             brain = SecondBrain(db)
+            cleanup.callback(brain.close)
             store.replace_canonical(brain, vault)
             with store.canonical_mutation(brain, vault):
                 brain.add("Healthy canary", "paired")
