@@ -1,0 +1,31 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{microtype}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\title{A Portable File-Based Memory Layer for Multiple AI Agent Clients\\\large Canonical Markdown, rebuildable indexing, and interoperability boundaries}
+\author{Stan Chen}
+\date{23 November 2026\\[4pt]\small Unpublished working draft; not submitted to arXiv}
+\begin{document}
+\maketitle
+\begin{center}\small This draft has no arXiv identifier. Claims are limited to the evidence described below.\end{center}
+\begin{abstract}
+This systems note describes Second Brain, a local-first knowledge layer intended to share durable project memory across AI agent clients. Canonical knowledge is stored as inspectable Markdown with stable identifiers and links in an OKF-flavoured Markdown Bundle; SQLite is a disposable search index rebuildable from those files. The repository exposes the store through an Agent Skill, command-line interface, and stdio MCP server. This design reduces dependence on one host, but host compatibility and cross-client activation are separate empirical questions. The release is labeled beta: local implementation evidence exists, while live activation in every host and cloud-provider behavior are not established by CI. We describe the data model, recovery properties, and evaluation needed to substantiate portability and retrieval quality.
+\end{abstract}
+\section{Motivation}
+Agent-specific memory can make project decisions inaccessible when users switch tools. Second Brain stores canonical knowledge as files users control and provides agent-facing interfaces over that store.\par
+Portability has layers: file format, stable identity and links, interface compatibility, retrieval, and owner control. Supporting an interface does not prove that every host activates it correctly.\par
+\section{Architecture}
+The canonical store is an OKF-flavoured Markdown Bundle \cite{r1}. Notes use stable identifiers and wikilinks. SQLite is a derived local search index that can be deleted and rebuilt without losing canonical records.\par
+An Agent Skill, CLI, and stdio MCP \cite{r2} server expose the same underlying memory. Clients should not maintain independent canonical stores. Core local use does not require cloud synchronization.\par
+\section{Evidence and limitations}
+The repository documents \cite{r3} checks for package behavior, the local engine, an MCP subprocess, Bundle behavior, and snapshot/restore. These implementation artifacts do not demonstrate live activation in every host or cloud-provider integration.\par
+A portability study could use the same seeded Bundle across hosts, verify stable note identity after edits, rebuild the index, restore from snapshot, and measure retrieval on preregistered facts. Markdown portability does not guarantee semantic interoperability or resolve concurrent edits.\par
+\section{Conclusion}
+Second Brain provides a file-centered architecture for shared agent memory. Whether host integrations preserve meaning and user control under real multi-agent work remains an open research question.\par
+\begin{thebibliography}{99}
+\bibitem{r1} Open Knowledge Foundation. Frictionless Data Package specifications. \url{https://specs.frictionlessdata.io/}
+\bibitem{r2} Model Context Protocol. Specification, version 2026-07-28. \url{https://modelcontextprotocol.io/specification/2026-07-28}
+\bibitem{r3} Chen, S. Second Brain repository. \url{https://github.com/stancsz/second-brain}
+\end{thebibliography}
+\end{document}

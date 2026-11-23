@@ -1,5 +1,7 @@
 # second-brain
 
+[Unpublished research draft (PDF)](paper/main.pdf) · [LaTeX source](paper/main.tex) · [Product and research values](#product-and-research-values)
+
 **One memory for Claude, Codex, Gemini, OpenCode, and Cline — stored as files you own.**
 
 [![CI](https://github.com/stancsz/second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/stancsz/second-brain/actions/workflows/ci.yml)
@@ -398,3 +400,14 @@ Run the release gate before opening a pull request. Security issues should follo
 [SECURITY.md](SECURITY.md), not a public issue.
 
 MIT licensed. Your knowledge is your intellectual history; keep the files.
+
+## Product and research values
+
+Second Brain gives AI clients access to one local-first memory whose canonical records are inspectable Markdown files; SQLite is a rebuildable search index.
+
+- **User-owned source of truth:** notes can be inspected, edited, copied, and backed up as files.
+- **Interoperable interfaces:** an Agent Skill, CLI, and stdio MCP server use the same underlying bundle.
+- **Recoverability:** the index is derived data and can be rebuilt from canonical files.
+- **Bounded compatibility claims:** this beta does not claim live activation in every agent host or cloud-provider account.
+
+[Unpublished research draft (PDF)](paper/main.pdf) · [LaTeX source](paper/main.tex). Not submitted to arXiv; no identifier is claimed.
