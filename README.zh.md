@@ -1,6 +1,10 @@
 # second-brain
 
+<p align="center"><img src="docs/assets/second-brain-mark.svg" alt="Second Brain：由你拥有的互联记忆文件" width="460"></p>
+
 **让 Claude、Codex、Gemini、OpenCode 和 Cline 共用一份记忆——并以你拥有的文件保存。**
+
+[官方网站](https://stancsz.github.io/second-brain/zh/) · [市场定位与成熟度](docs/market-position.md) · [English](README.md)
 
 [![CI](https://github.com/stancsz/second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/stancsz/second-brain/actions/workflows/ci.yml)
 [![Agent Skills](https://img.shields.io/badge/Agent_Skills-validated-1f6feb)](https://agentskills.io/)
@@ -270,8 +274,9 @@ macOS 上以 Python 3.10 与 3.14 运行；缺少可选加密依赖或平台前�
 
 ## 开源 SaaS 方向
 
-开源核心应保持完整的离线可用性，包括格式、CLI、SQLite 投影、MCP、Obsidian
-路径、加密、Git 同步、备份契约和提供商适配器。付费产品可以运营其周边最困难的
+以下收费服务想法只是待验证假设，并非已证实的买家需求或定价决定。开源核心应保持
+完整的离线可用性，包括格式、CLI、SQLite 投影、MCP、Obsidian 路径、加密、Git 同步、
+备份契约和提供商适配器。服务可以尝试运营其周边最困难的
 部分：
 
 - 设备与工作区集群健康状态；
@@ -279,7 +284,7 @@ macOS 上以 Python 3.10 与 3.14 运行；缺少可选加密依赖或平台前�
 - BYOC 控制平面、RBAC、审计、SSO/SCIM、告警和支持；
 - 团队入门与迁移。
 
-建议先向小型 AI 咨询公司提供付费的 **Agent Memory Portability Setup**，验证需求
+下一项可测试的服务是向小型 AI 咨询公司提供付费的 **Agent Memory Portability Setup**，验证需求
 后再建设广泛托管平台。完整的目标买家、定价假设、技术边界和 90 天验证门槛见
 [开源 SaaS 方案](docs/OPEN_SOURCE_SAAS.md)。
 

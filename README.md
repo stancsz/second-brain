@@ -1,6 +1,8 @@
 # second-brain
 
-[Unpublished research draft (PDF)](paper/main.pdf) · [LaTeX source](paper/main.tex) · [Product and research values](#product-and-research-values)
+<p align="center"><img src="docs/assets/second-brain-mark.svg" alt="Second Brain: connected, user-owned memory files" width="460"></p>
+
+[Official site](https://stancsz.github.io/second-brain/) · [Market position and maturity](docs/market-position.md) · [Unpublished research draft (PDF)](paper/main.pdf) · [LaTeX source](paper/main.tex) · [Product and research values](#product-and-research-values)
 
 **One memory for Claude, Codex, Gemini, OpenCode, and Cline — stored as files you own.**
 
@@ -375,16 +377,17 @@ Project status and remaining gates:
 
 ## Open-source SaaS direction
 
+The paid-service ideas below are hypotheses, not validated buyer or pricing decisions.
 The open core should remain completely useful offline: format, CLI, SQLite
 projection, MCP, Obsidian path, cryptography, git sync, backup contract, and
-provider adapters. A paid product can operate the difficult layer around it:
+provider adapters. A service could test the difficult operational layer around it:
 
 - device and workspace fleet health;
 - scheduled encrypted snapshots and restore drills;
 - BYOC control plane, RBAC, audit, SSO/SCIM, alerts, and support;
 - team onboarding and migration.
 
-The recommended first offer is a paid **Agent Memory Portability Setup** for a
+The first offer to test is a paid **Agent Memory Portability Setup** for a
 small AI consultancy, before building a broad hosted platform. The full buyer,
 pricing hypotheses, technical boundary, and 90-day gates are in
 [docs/OPEN_SOURCE_SAAS.md](docs/OPEN_SOURCE_SAAS.md).

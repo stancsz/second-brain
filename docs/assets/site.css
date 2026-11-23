@@ -380,3 +380,12 @@ footer > div:last-child { display: flex; gap: 1rem; }
   .continuity-card { padding: 1rem; }
   .data-route { font-size: .5rem; }
 }
+
+.maturity-section { padding-top: 1.2rem; }
+.maturity-card { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; padding: clamp(1.5rem, 4vw, 3rem); border: 1px solid #c8cbb8; border-radius: 1.1rem; background: linear-gradient(130deg, #eff1e7, #f8f8f1); }
+.maturity-card h2 { margin: .5rem 0 0; color: #20241d; font-size: clamp(1.8rem, 3.4vw, 3rem); line-height: 1.06; letter-spacing: -.055em; }
+.maturity-card h2 em { color: #73833d; font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+.maturity-card p { margin: 0 0 1rem; color: #596052; font-size: .95rem; }
+.maturity-card p strong { color: #2a3423; }
+.maturity-card .text-link { color: #465a22; font-weight: 700; text-underline-offset: .22em; }
+@media (max-width: 700px) { .maturity-card { grid-template-columns: 1fr; gap: 1.4rem; } }
