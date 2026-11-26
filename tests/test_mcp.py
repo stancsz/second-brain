@@ -18,6 +18,108 @@ CLI = ROOT / "scripts" / "brain_cli.py"
 
 
 class TestMCPServer(unittest.TestCase):
+    def test_recall_tools_over_stdio_with_synthetic_metadata(self):
+        with tempfile.TemporaryDirectory() as isolated_home:
+            env = os.environ.copy()
+            env.update({
+                "HOME": isolated_home,
+                "USERPROFILE": isolated_home,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONIOENCODING": "utf-8",
+            })
+
+            def seed(title, affect, subject, valid_from, valid_to=None):
+                command = [sys.executable, str(CLI), "add", title, "synthetic recall fixture",
+                           "--subject", subject, "--affect", json.dumps(affect),
+                           "--valid-from", valid_from]
+                if valid_to:
+                    command.extend(["--valid-to", valid_to])
+                seeded = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
+                                        text=True, encoding="utf-8", timeout=30, check=False)
+                self.assertEqual(seeded.returncode, 0, seeded.stderr + seeded.stdout)
+
+            seed("Affect boundary one", {"emotion": "joy", "valence": 0.2,
+                 "arousal": 0.4, "intensity": 0.7}, "/people/alex.md", "2024-01-01",
+                 "2024-12-31")
+            seed("Affect boundary two", {"emotion": "JOY", "valence": 0.8,
+                 "arousal": 0.9, "intensity": 0.9}, "/people/alex.md", "2024-01-01",
+                 "2024-12-31")
+            seed("Affect excluded", {"emotion": "calm", "valence": 0.5,
+                 "arousal": 0.5, "intensity": 0.8}, "/people/other.md", "2024-01-01",
+                 "2024-12-31")
+            seed("Affect zero boundary", {"emotion": "neutral", "valence": 0,
+                 "arousal": 0, "intensity": 0}, "/people/alex.md", "2024-01-01",
+                 "2024-12-31")
+
+            def call(req_id, name, arguments):
+                return {"jsonrpc": "2.0", "id": req_id, "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments}}
+
+            requests = [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                call(2, "brain_recall_affect", {"emotion": "joy", "min_valence": 0.2,
+                     "max_valence": 0.8, "min_arousal": 0.4, "max_arousal": 0.9,
+                     "min_intensity": 0.7}),
+                call(3, "brain_recall_affect", {"emotion": "joy", "limit": 1}),
+                call(4, "brain_recall_subject", {"subject": "alex"}),
+                call(5, "brain_recall_as_of", {"as_of": "2024-06-01", "query": "synthetic"}),
+                call(6, "brain_recall_as_of", {"as_of": "2025-01-01"}),
+                call(7, "brain_recall_affect", {"min_valence": [0.2]}),
+                call(8, "brain_recall_affect", {"min_valence": 0, "max_valence": 0,
+                     "min_arousal": 0, "max_arousal": 0, "min_intensity": 0}),
+                call(9, "brain_recall_affect", {"limit": 0}),
+                call(10, "brain_recall_affect", {"limit": None}),
+                call(11, "brain_recall_subject", {"subject": "alex", "limit": 1}),
+            ]
+            result = subprocess.run(
+                [sys.executable, str(SERVER)],
+                input="".join(json.dumps(request) + "\n" for request in requests),
+                cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8",
+                timeout=30, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            responses = {item["id"]: item for item in map(json.loads, result.stdout.splitlines())}
+            self.assertEqual(set(responses), set(range(1, 12)), result.stdout)
+
+            listed = {tool["name"]: tool for tool in responses[1]["result"]["tools"]}
+            required = {"brain_add", "brain_search", "brain_recall_as_of",
+                        "brain_recall_affect", "brain_recall_subject"}
+            self.assertTrue(required.issubset(listed))
+            affect_schema = listed["brain_recall_affect"]["inputSchema"]
+            self.assertEqual(affect_schema["properties"]["min_valence"]["type"], "number")
+            self.assertEqual(affect_schema["properties"]["limit"]["type"], "integer")
+
+            def payload(req_id):
+                response = responses[req_id]["result"]
+                self.assertNotIn("isError", response)
+                return json.loads(response["content"][0]["text"])
+
+            bounded = payload(2)
+            self.assertEqual([row["title"] for row in bounded["concepts"]],
+                             ["Affect boundary two", "Affect boundary one"])
+            self.assertEqual(len(payload(3)["concepts"]), 1)
+            subject = payload(4)
+            self.assertEqual(subject["subject"], "/people/alex.md")
+            self.assertEqual({row["title"] for row in subject["concepts"]},
+                             {"Affect boundary one", "Affect boundary two",
+                              "Affect zero boundary"})
+            historical = payload(5)
+            self.assertEqual(historical["as_of"], "2024-06-01")
+            self.assertEqual(len(historical["concepts"]), 4)
+            self.assertEqual(payload(6)["concepts"], [])
+            self.assertTrue(responses[7]["result"]["isError"])
+            zero_bounds = payload(8)
+            self.assertEqual(zero_bounds["filters"], {
+                "min_valence": 0, "max_valence": 0, "min_arousal": 0,
+                "max_arousal": 0, "min_intensity": 0,
+            })
+            self.assertEqual([row["title"] for row in zero_bounds["concepts"]],
+                             ["Affect zero boundary"])
+            self.assertEqual(payload(9)["concepts"], [])
+            self.assertTrue(responses[10]["result"]["isError"])
+            self.assertTrue(responses[10]["result"]["content"][0]["text"].startswith("Error:"))
+            self.assertEqual(len(payload(11)["concepts"]), 1)
+
     def test_initialize_list_add_and_search_in_isolated_home(self):
         requests = [
             {
